@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#0B0813" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Finanzas" />
+  <meta name="description" content="Ingresos y gastos del mes en el laburo — 100% offline" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/icon-192.svg" />
+  <link rel="icon" type="image/svg+xml" href="icons/icon-192.svg" />
+  <title>Finanzas Laburo</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            void: '#0B0813',
+            night: '#120E21',
+            card: '#1E1835',
+            violet: { DEFAULT: '#8B5CF6', soft: '#A855F7', light: '#C084FC' },
+            neon: '#34D399',
+            rose: '#FB7185'
+          },
+          boxShadow: {
+            glow: '0 0 40px rgba(139, 92, 246, 0.35)',
+            'glow-green': '0 0 32px rgba(52, 211, 153, 0.35)'
+          }
+        }
+      }
+    };
+  </script>
+  <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+  <style>
+    :root { color-scheme: dark; }
+    html, body {
+      background: #0B0813;
+      overscroll-behavior: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body { min-height: 100dvh; padding-bottom: env(safe-area-inset-bottom); }
+    .glass {
+      background: rgba(30, 24, 53, 0.88);
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      backdrop-filter: blur(12px);
+    }
+    .safe-bottom { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
+    .safe-top { padding-top: max(0.75rem, env(safe-area-inset-top)); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .nav-item.active { color: #C084FC; }
+    .nav-item.active .nav-dot { opacity: 1; transform: scale(1); }
+    .nav-dot { opacity: 0; transform: scale(0.5); transition: all 0.2s ease; }
+    .chip {
+      background: rgba(139, 92, 246, 0.15);
+      border: 1px solid rgba(139, 92, 246, 0.35);
+    }
+    .chip.active {
+      background: rgba(139, 92, 246, 0.45);
+      border-color: #C084FC;
+    }
+    .modal-backdrop {
+      background: rgba(5, 3, 12, 0.72);
+      backdrop-filter: blur(6px);
+    }
+    .scrollbar-thin::-webkit-scrollbar { width: 4px; }
+    .scrollbar-thin::-webkit-scrollbar-thumb {
+      background: rgba(139, 92, 246, 0.4);
+      border-radius: 4px;
+    }
+    input, select, textarea { color-scheme: dark; }
+    .bar-fill { transition: width 0.4s ease; }
+  </style>
+</head>
+<body class="text-white font-sans antialiased select-none">
+  <div id="app" class="max-w-lg mx-auto min-h-[100dvh] flex flex-col relative">
+
+    <header class="safe-top px-5 pt-4 pb-2 flex items-center justify-between">
+      <div>
+        <p class="text-xs tracking-widest text-violet-light/70 uppercase">Finanzas laburo</p>
+        <h1 id="header-title" class="text-xl font-semibold">Inicio</h1>
+      </div>
+      <span id="online-badge" class="text-[10px] px-2 py-1 rounded-full chip text-violet-light">Offline-ready</span>
+    </header>
+
+    <main class="flex-1 overflow-y-auto scrollbar-thin px-4 pb-28">
+
+      <!-- INICIO -->
+      <section id="tab-home" class="tab-panel active space-y-4 pt-2">
+        <div class="glass rounded-3xl p-5">
+          <div class="flex items-center justify-between mb-3">
+            <button type="button" id="btn-prev-month" class="p-2 rounded-xl hover:bg-white/5 text-violet-light" aria-label="Mes anterior">
+              <i data-lucide="chevron-left" class="w-5 h-5"></i>
+            </button>
+            <div class="text-center">
+              <p class="text-xs text-white/50">Mes en vista</p>
+              <p id="month-label" class="text-base font-semibold text-violet-light">—</p>
+              <p class="text-[10px] text-white/35 mt-0.5">Cada mes arranca de cero · tocá un movimiento para editarlo</p>
+            </div>
+            <button type="button" id="btn-next-month" class="p-2 rounded-xl hover:bg-white/5 text-violet-light" aria-label="Mes siguiente">
+              <i data-lucide="chevron-right" class="w-5 h-5"></i>
+            </button>
+          </div>
+
+          <p class="text-xs text-white/50 mb-1 text-center">Saldo de este mes</p>
+          <p id="month-balance" class="text-4xl font-bold tabular-nums text-center tracking-tight">$0</p>
+
+          <div class="grid grid-cols-2 gap-3 mt-5">
+            <div class="rounded-2xl bg-neon/10 border border-neon/25 p-3 text-center">
+              <p class="text-[10px] uppercase tracking-wide text-neon/80">Entra</p>
+              <p id="month-income" class="text-xl font-bold tabular-nums text-neon mt-0.5">$0</p>
+            </div>
+            <div class="rounded-2xl bg-rose/10 border border-rose/25 p-3 text-center">
+              <p class="text-[10px] uppercase tracking-wide text-rose/80">Sale</p>
+              <p id="month-expense" class="text-xl font-bold tabular-nums text-rose mt-0.5">$0</p>
+            </div>
+          </div>
+
+          <div class="mt-4 h-2 rounded-full bg-white/5 overflow-hidden flex">
+            <div id="bar-income" class="bar-fill h-full bg-neon" style="width:50%"></div>
+            <div id="bar-expense" class="bar-fill h-full bg-rose" style="width:50%"></div>
+          </div>
+          <p id="month-count" class="text-[11px] text-white/35 text-center mt-2">0 movimientos</p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <button type="button" id="btn-add-income"
+            class="rounded-2xl py-4 px-3 font-semibold text-sm bg-gradient-to-br from-emerald-500 to-emerald-700 shadow-glow-green active:scale-[0.98] transition-transform flex flex-col items-center gap-1">
+            <i data-lucide="arrow-down-left" class="w-6 h-6"></i>
+            + Entrada
+          </button>
+          <button type="button" id="btn-add-expense"
+            class="rounded-2xl py-4 px-3 font-semibold text-sm bg-gradient-to-br from-rose-500 to-rose-700 shadow-glow active:scale-[0.98] transition-transform flex flex-col items-center gap-1">
+            <i data-lucide="arrow-up-right" class="w-6 h-6"></i>
+            − Gasto
+          </button>
+        </div>
+
+        <div class="glass rounded-2xl p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-medium text-white/80">Últimos del mes</h2>
+            <button type="button" id="btn-go-moves" class="text-xs text-violet-light">Ver todos</button>
+          </div>
+          <ul id="home-recent" class="space-y-2"></ul>
+          <p id="home-empty" class="text-xs text-white/40 py-3 text-center">Sin movimientos este mes.</p>
+        </div>
+
+        <div class="glass rounded-2xl p-4">
+          <h2 class="text-sm font-medium text-white/80 mb-3">Por familia (gastos)</h2>
+          <ul id="home-families" class="space-y-2"></ul>
+          <p id="home-fam-empty" class="text-xs text-white/40 py-2">Sin gastos por familia.</p>
+        </div>
+      </section>
+
+      <!-- MOVIMIENTOS -->
+      <section id="tab-moves" class="tab-panel space-y-4 pt-2">
+        <div class="flex gap-2 overflow-x-auto pb-1">
+          <button type="button" data-move-filter="all" class="move-filter chip active shrink-0 px-3 py-1.5 rounded-full text-xs">Todos</button>
+          <button type="button" data-move-filter="income" class="move-filter chip shrink-0 px-3 py-1.5 rounded-full text-xs">Entradas</button>
+          <button type="button" data-move-filter="expense" class="move-filter chip shrink-0 px-3 py-1.5 rounded-full text-xs">Gastos</button>
+        </div>
+        <div class="flex items-center justify-between">
+          <p id="moves-month-label" class="text-sm text-white/50">—</p>
+          <div class="flex gap-2">
+            <button type="button" id="btn-add-income-2" class="text-xs text-neon flex items-center gap-1">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i> Entrada
+            </button>
+            <button type="button" id="btn-add-expense-2" class="text-xs text-rose flex items-center gap-1">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i> Gasto
+            </button>
+          </div>
+        </div>
+        <ul id="moves-list" class="space-y-2"></ul>
+        <p id="moves-empty" class="text-xs text-white/40 text-center py-8">No hay movimientos.</p>
+      </section>
+
+      <!-- FAMILIAS -->
+      <section id="tab-families" class="tab-panel space-y-4 pt-2">
+        <div class="glass rounded-2xl p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-medium text-white/80">Familias / grupos</h2>
+            <button type="button" id="btn-add-family" class="text-xs text-violet-light flex items-center gap-1">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i> Nueva
+            </button>
+          </div>
+          <p class="text-[11px] text-white/40 mb-3">Usalas en los gastos (ej. Pérez, González, misc.).</p>
+          <ul id="families-list" class="space-y-2"></ul>
+          <p id="families-empty" class="text-xs text-white/40 text-center py-4 hidden">Agregá tu primera familia.</p>
+        </div>
+        <div class="glass rounded-2xl p-4">
+          <h2 class="text-sm font-medium text-white/80 mb-3">Gastos del mes por familia</h2>
+          <ul id="fam-month-totals" class="space-y-2"></ul>
+        </div>
+      </section>
+
+      <!-- LOG -->
+      <section id="tab-log" class="tab-panel space-y-4 pt-2">
+        <h2 class="text-sm font-medium text-white/80">Registro auditable</h2>
+        <ul id="audit-list" class="space-y-2"></ul>
+        <p id="audit-empty" class="text-xs text-white/40 text-center py-6">El log aparece con la actividad.</p>
+      </section>
+
+      <!-- CONFIG -->
+      <section id="tab-config" class="tab-panel space-y-4 pt-2">
+        <div class="glass rounded-2xl p-5 space-y-4">
+          <div>
+            <label class="block text-xs text-white/50 mb-1.5" for="cfg-name">Tu nombre (opcional)</label>
+            <input id="cfg-name" type="text" maxlength="40" placeholder="Facundo"
+              class="w-full bg-void/60 border border-violet/30 rounded-xl px-4 py-3 focus:outline-none focus:border-violet-light" />
+          </div>
+          <div>
+            <label class="block text-xs text-white/50 mb-1.5" for="cfg-currency">Símbolo de moneda</label>
+            <input id="cfg-currency" type="text" maxlength="4" placeholder="$"
+              class="w-full bg-void/60 border border-violet/30 rounded-xl px-4 py-3 focus:outline-none focus:border-violet-light" />
+          </div>
+          <button id="btn-save-config" type="button"
+            class="w-full py-3.5 rounded-2xl bg-gradient-to-r from-violet to-violet-soft font-semibold text-sm shadow-glow">
+            Guardar configuración
+          </button>
+        </div>
+        <div class="glass rounded-2xl p-4 space-y-3">
+          <h2 class="text-sm font-medium text-white/80">Datos</h2>
+          <button id="btn-export" type="button" class="w-full py-3 rounded-xl border border-violet/30 text-sm text-violet-light flex items-center justify-center gap-2">
+            <i data-lucide="download" class="w-4 h-4"></i> Exportar backup JSON
+          </button>
+          <label class="w-full py-3 rounded-xl border border-violet/30 text-sm text-violet-light flex items-center justify-center gap-2 cursor-pointer">
+            <i data-lucide="upload" class="w-4 h-4"></i> Importar backup JSON
+            <input id="input-import" type="file" accept="application/json,.json" class="hidden" />
+          </label>
+          <button id="btn-reset" type="button" class="w-full py-3 rounded-xl border border-red-500/30 text-sm text-red-400 flex items-center justify-center gap-2">
+            <i data-lucide="trash-2" class="w-4 h-4"></i> Borrar todos los datos
+          </button>
+        </div>
+        <p class="text-center text-[11px] text-white/30 pb-4">Finanzas Laburo · PWA offline · v1.0 · puerto 8789</p>
+      </section>
+    </main>
+
+    <nav class="fixed bottom-0 left-0 right-0 z-40">
+      <div class="max-w-lg mx-auto glass safe-bottom border-t border-violet/20">
+        <div class="grid grid-cols-5 px-1 pt-2 pb-1">
+          <button type="button" data-tab="home" class="nav-item active flex flex-col items-center gap-0.5 py-1.5 text-white/45 text-[10px]">
+            <i data-lucide="home" class="w-5 h-5"></i><span>Inicio</span>
+            <span class="nav-dot w-1 h-1 rounded-full bg-violet-light"></span>
+          </button>
+          <button type="button" data-tab="moves" class="nav-item flex flex-col items-center gap-0.5 py-1.5 text-white/45 text-[10px]">
+            <i data-lucide="list" class="w-5 h-5"></i><span>Movim.</span>
+            <span class="nav-dot w-1 h-1 rounded-full bg-violet-light"></span>
+          </button>
+          <button type="button" data-tab="families" class="nav-item flex flex-col items-center gap-0.5 py-1.5 text-white/45 text-[10px]">
+            <i data-lucide="users" class="w-5 h-5"></i><span>Familias</span>
+            <span class="nav-dot w-1 h-1 rounded-full bg-violet-light"></span>
+          </button>
+          <button type="button" data-tab="log" class="nav-item flex flex-col items-center gap-0.5 py-1.5 text-white/45 text-[10px]">
+            <i data-lucide="scroll-text" class="w-5 h-5"></i><span>Log</span>
+            <span class="nav-dot w-1 h-1 rounded-full bg-violet-light"></span>
+          </button>
+          <button type="button" data-tab="config" class="nav-item flex flex-col items-center gap-0.5 py-1.5 text-white/45 text-[10px]">
+            <i data-lucide="settings" class="w-5 h-5"></i><span>Config</span>
+            <span class="nav-dot w-1 h-1 rounded-full bg-violet-light"></span>
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <div id="toast" class="fixed left-1/2 -translate-x-1/2 bottom-24 z-50 px-4 py-2.5 rounded-2xl glass text-sm opacity-0 pointer-events-none transition-opacity duration-300 max-w-[90%]"></div>
+
+    <div id="modal-root" class="fixed inset-0 z-50 hidden items-end sm:items-center justify-center modal-backdrop">
+      <div id="modal-panel" class="w-full max-w-lg glass rounded-t-3xl sm:rounded-3xl p-5 pb-8 max-h-[88dvh] overflow-y-auto scrollbar-thin mx-0 sm:mx-4">
+        <div class="flex items-center justify-between mb-4">
+          <h3 id="modal-title" class="text-lg font-semibold">—</h3>
+          <button id="modal-close" type="button" class="p-2 rounded-full hover:bg-white/5 text-white/60">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+        <div id="modal-body"></div>
+      </div>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
