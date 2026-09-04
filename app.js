@@ -824,10 +824,10 @@
         ${f ? `
         <div>
           <label class="block text-xs text-white/50 mb-1">SIPI</label>
-          <textarea name="sipis" rows="2" inputmode="numeric"
+          <textarea name="sipis" rows="2"
             class="w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-violet-light"
-            placeholder="123456">${escapeHtml((f.sipis || []).join('\n'))}</textarea>
-          <p class="text-[10px] text-white/35 mt-1">Uno por línea si la familia tiene más de uno. Al cargar un gasto vas a poder elegir cuál.</p>
+            placeholder="123456, 789012">${escapeHtml((f.sipis || []).join(', '))}</textarea>
+          <p class="text-[10px] text-white/35 mt-1">Si la familia tiene más de uno, separalos con coma. Al cargar un gasto vas a poder elegir cuál.</p>
         </div>
         <div>
           <label class="block text-xs text-white/50 mb-1">Nombre en la planilla (opcional)</label>
