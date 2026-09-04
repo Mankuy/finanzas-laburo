@@ -705,7 +705,7 @@
             <p class="text-[10px] text-white/35 mt-1">El resumen usa solo los movimientos de ese mes. El saldo que sobra pasa al siguiente.</p>
           </div>
           <div>
-            <label class="block text-xs text-white/50 mb-1">Nota (opcional)</label>
+            <label class="block text-xs text-white/50 mb-1">Nota (opcional, solo para vos)</label>
             <input name="note" type="text" maxlength="160" value="${escapeAttr(note)}"
               class="w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-violet-light"
               placeholder="Ej. pago parcial" />
@@ -729,6 +729,7 @@
           <input name="what" id="move-what" type="text" required maxlength="100" value="${escapeAttr(m?.what || '')}"
             class="w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-violet-light"
             placeholder="Ej. surtido, ferretería, nafta…" />
+          <p class="text-[10px] text-white/35 mt-1">Es para vos: en la planilla va la familia o el rubro, no este detalle.</p>
         </div>
         <div>
           <label class="block text-xs text-white/50 mb-1">Familia / grupo</label>
@@ -745,7 +746,7 @@
           <p class="text-[10px] text-white/35 mt-1">El resumen usa solo los movimientos de ese mes. El saldo que sobra pasa al siguiente.</p>
         </div>
         <div>
-          <label class="block text-xs text-white/50 mb-1">Nota (opcional)</label>
+          <label class="block text-xs text-white/50 mb-1">Nota (opcional, solo para vos)</label>
           <input name="note" type="text" maxlength="160" value="${escapeAttr(note)}"
             class="w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-violet-light" />
         </div>
