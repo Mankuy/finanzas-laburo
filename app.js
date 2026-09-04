@@ -1411,10 +1411,25 @@
     sync();
   }
 
+  /**
+   * El service worker sirve primero lo que tiene guardado, así que una versión
+   * nueva tardaba dos aperturas en verse. Acá se le pide que se fije si hay
+   * actualización y, cuando la nueva toma el control, se recarga sola una vez.
+   * No se pierde nada: todo movimiento se guarda apenas se carga.
+   */
   function registerSW() {
     if (!('serviceWorker' in navigator)) return;
+    const yaTeniaSW = Boolean(navigator.serviceWorker.controller);
+    let recargando = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!yaTeniaSW || recargando) return;  // primera instalación: no hay nada viejo que reemplazar
+      recargando = true;
+      location.reload();
+    });
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js').catch(() => {});
+      navigator.serviceWorker.register('./sw.js')
+        .then((reg) => reg.update().catch(() => {}))
+        .catch(() => {});
     });
   }
 
