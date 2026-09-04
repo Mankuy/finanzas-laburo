@@ -1,9 +1,10 @@
 /* Finanzas Laburo — offline-first cache-first */
-const CACHE = 'finanzas-laburo-v1';
+const CACHE = 'finanzas-laburo-v2';
 const ASSETS = [
   './',
   './index.html',
   './app.js',
+  './sheets.js',
   './manifest.json',
   './icons/icon-192.svg',
   './icons/icon-512.svg',

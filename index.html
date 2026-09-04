@@ -73,6 +73,25 @@
     }
     input, select, textarea { color-scheme: dark; }
     .bar-fill { transition: width 0.4s ease; }
+    #print-area { display: none; }
+    @media print {
+      html, body { background: #fff !important; }
+      #app { display: none !important; }
+      /* Sin esto Chrome imprime los fondos en blanco y el encabezado pierde el durazno. */
+      #print-area {
+        display: block !important; color: #000; padding: 10px;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+      }
+      #print-area h1 { font-size: 14pt; margin: 0 0 4px; }
+      #print-area .tech { font-size: 10pt; margin: 0 0 12px; }
+      #print-area table { width: 100%; border-collapse: collapse; font-size: 9pt; border: 2px solid #000; }
+      #print-area th, #print-area td { border: 1px solid #000; padding: 3px 5px; }
+      #print-area th { background: #FBE4D5; border: 2px solid #000; }
+      #print-area .num { text-align: right; white-space: nowrap; }
+      #print-area .ctr { text-align: center; white-space: nowrap; }
+      #print-area tfoot td { font-weight: bold; border-top: 2px solid #000; }
+      #print-area tfoot .num { color: #c00; }
+    }
   </style>
 </head>
 <body class="text-white font-sans antialiased select-none">
@@ -98,7 +117,7 @@
             <div class="text-center">
               <p class="text-xs text-white/50">Mes en vista</p>
               <p id="month-label" class="text-base font-semibold text-violet-light">—</p>
-              <p class="text-[10px] text-white/35 mt-0.5">Cada mes arranca de cero · tocá un movimiento para editarlo</p>
+              <p class="text-[10px] text-white/35 mt-0.5">El saldo pasa al mes siguiente · tocá un movimiento para editarlo</p>
             </div>
             <button type="button" id="btn-next-month" class="p-2 rounded-xl hover:bg-white/5 text-violet-light" aria-label="Mes siguiente">
               <i data-lucide="chevron-right" class="w-5 h-5"></i>
@@ -153,6 +172,31 @@
           <ul id="home-families" class="space-y-2"></ul>
           <p id="home-fam-empty" class="text-xs text-white/40 py-2">Sin gastos por familia.</p>
         </div>
+
+        <div class="glass rounded-2xl p-4 space-y-3">
+          <h2 class="text-sm font-medium text-white/80">Planillas de <span id="sheets-month" class="text-violet-light">—</span></h2>
+          <p class="text-[11px] text-white/40">Se abren en el menú de compartir del celular: ahí elegís Drive, WhatsApp o guardarlas.</p>
+          <div class="grid grid-cols-2 gap-2">
+            <button type="button" id="btn-sheet-caja"
+              class="py-3 rounded-xl border border-violet/40 text-sm text-violet-light flex items-center justify-center gap-2">
+              <i data-lucide="table" class="w-4 h-4"></i> Caja
+            </button>
+            <button type="button" id="btn-sheet-sirc"
+              class="py-3 rounded-xl border border-violet/40 text-sm text-violet-light flex items-center justify-center gap-2">
+              <i data-lucide="table-2" class="w-4 h-4"></i> SIRC
+            </button>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <button type="button" id="btn-sheet-pdf"
+              class="py-3 rounded-xl border border-violet/30 text-sm text-violet-light flex items-center justify-center gap-2">
+              <i data-lucide="file-text" class="w-4 h-4"></i> Caja PDF
+            </button>
+            <button type="button" id="btn-sirc-pdf"
+              class="py-3 rounded-xl border border-violet/30 text-sm text-violet-light flex items-center justify-center gap-2">
+              <i data-lucide="file-text" class="w-4 h-4"></i> SIRC PDF
+            </button>
+          </div>
+        </div>
       </section>
 
       <!-- MOVIMIENTOS -->
@@ -187,6 +231,10 @@
             </button>
           </div>
           <p class="text-[11px] text-white/40 mb-3">Usalas en los gastos (ej. Pérez, González, misc.).</p>
+          <label class="w-full mb-3 py-2.5 rounded-xl border border-violet/30 text-xs text-violet-light flex items-center justify-center gap-2 cursor-pointer">
+            <i data-lucide="id-card" class="w-3.5 h-3.5"></i> Cargar SIPI desde archivo
+            <input id="input-sipi" type="file" accept="application/json,.json" class="hidden" />
+          </label>
           <ul id="families-list" class="space-y-2"></ul>
           <p id="families-empty" class="text-xs text-white/40 text-center py-4 hidden">Agregá tu primera familia.</p>
         </div>
@@ -209,6 +257,11 @@
           <div>
             <label class="block text-xs text-white/50 mb-1.5" for="cfg-name">Tu nombre (opcional)</label>
             <input id="cfg-name" type="text" maxlength="40" placeholder="Facundo"
+              class="w-full bg-void/60 border border-violet/30 rounded-xl px-4 py-3 focus:outline-none focus:border-violet-light" />
+          </div>
+          <div>
+            <label class="block text-xs text-white/50 mb-1.5" for="cfg-technician">Nombre del técnico (va en la planilla)</label>
+            <input id="cfg-technician" type="text" maxlength="60" placeholder="Ej. Lorena Gussoni"
               class="w-full bg-void/60 border border-violet/30 rounded-xl px-4 py-3 focus:outline-none focus:border-violet-light" />
           </div>
           <div>
@@ -279,6 +332,8 @@
       </div>
     </div>
   </div>
+  <div id="print-area"></div>
+  <script src="sheets.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
