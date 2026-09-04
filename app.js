@@ -1174,7 +1174,9 @@
     URL.revokeObjectURL(a.href);
     audit('export_sheet', 'Descargó ' + filename);
     save();
-    toast('Planilla descargada');
+    // Chrome no deja compartir .xlsx (solo pdf, csv, imágenes, audio y video),
+    // así que este es el camino real: queda en Descargas y se sube desde ahí.
+    toast('Quedó en Descargas del celu. Compartila a Drive desde ahí.');
   }
 
   function exportCaja() {
