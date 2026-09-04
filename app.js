@@ -1191,63 +1191,56 @@
     shareFile(window.FLSheets.buildSirc(d), sheetFileName('sirc', 'xlsx'));
   }
 
-  /** Monta la planilla en HTML y la manda a imprimir → "Guardar como PDF". */
-  function printDoc(title, technician, headers, body, footer) {
-    document.getElementById('print-area').innerHTML = `
-      <h1>${escapeHtml(title)}</h1>
-      <p class="tech">NOMBRE DEL TÉCNICO: ${escapeHtml(technician)}</p>
-      <table>
-        <thead><tr>${headers.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
-        <tbody>${body}</tbody>
-        ${footer || ''}
-      </table>
-    `;
-    save();
-    window.print();
-  }
-
+  /**
+   * El PDF se genera como archivo (no se manda a imprimir) porque es el
+   * entregable: se comparte para que lo impriman en otro lado. Chrome sí deja
+   * compartir application/pdf, así que este sale por el menú del celular.
+   */
   function printCaja() {
     const d = cajaData();
     if (!d.rows.length) { toast('No hay movimientos este mes'); return; }
     let saldo = 0;
-    const body = d.rows.map((r) => {
+    const rows = d.rows.map((r) => {
       saldo += (Number(r.income) || 0) - (Number(r.expense) || 0);
-      return `<tr>
-        <td class="ctr">${escapeHtml(formatDateNum(r.date))}</td>
-        <td>${escapeHtml(r.concept)}</td>
-        <td class="num">${escapeHtml(r.sipi)}</td>
-        <td class="num">${r.income ? money(r.income) : ''}</td>
-        <td class="num">${r.expense ? money(r.expense) : ''}</td>
-        <td class="num">${money(saldo)}</td>
-      </tr>`;
-    }).join('');
-    audit('print_sheet', 'Imprimió la caja de ' + d.monthLabel);
-    printDoc(
-      'CAJA DE: ' + d.monthLabel, d.technician,
-      ['FECHA', 'CONCEPTO', 'SIPI', 'INGRESO', 'EGRESO', 'SALDO'], body,
-      `<tfoot><tr><td colspan="5">SALDO FINAL</td><td class="num">${money(saldo)}</td></tr></tfoot>`
-    );
+      return [
+        formatDateNum(r.date), r.concept, r.sipi,
+        r.income ? money(r.income) : '',
+        r.expense ? money(r.expense) : '',
+        money(saldo)
+      ];
+    });
+    audit('print_sheet', 'Generó el PDF de la caja de ' + d.monthLabel);
+    const blob = window.FLPdf.build({
+      title: 'CAJA DE: ' + d.monthLabel,
+      technician: d.technician,
+      headers: ['FECHA', 'CONCEPTO', 'SIPI', 'INGRESO', 'EGRESO', 'SALDO'],
+      cols: [62, 152, 62, 78, 78, 83],
+      aligns: ['c', 'l', 'r', 'r', 'r', 'r'],
+      rows,
+      footer: { label: 'SALDO FINAL', value: money(saldo) }
+    });
+    shareFile(blob, sheetFileName('caja', 'pdf'));
   }
 
   function printSirc() {
     const d = sircData();
     if (!d.rows.length) { toast('No hay gastos este mes'); return; }
     let total = 0;
-    const body = d.rows.map((r) => {
+    const rows = d.rows.map((r) => {
       total += Number(r.amount) || 0;
-      return `<tr>
-        <td class="ctr">${escapeHtml(formatDateNum(r.date))}</td>
-        <td>${escapeHtml(r.family)}</td>
-        <td class="num">${escapeHtml(r.sipi)}</td>
-        <td class="num">${money(r.amount)}</td>
-      </tr>`;
-    }).join('');
-    audit('print_sheet', 'Imprimió el SIRC de ' + d.monthLabel);
-    printDoc(
-      'CAJA DE: ' + d.monthLabel, d.technician,
-      ['FECHA:', 'FAMILIA:', 'SIPI:', 'GASTO:'], body,
-      `<tfoot><tr><td colspan="3">TOTAL</td><td class="num">${money(total)}</td></tr></tfoot>`
-    );
+      return [formatDateNum(r.date), r.family, r.sipi, money(r.amount)];
+    });
+    audit('print_sheet', 'Generó el PDF del SIRC de ' + d.monthLabel);
+    const blob = window.FLPdf.build({
+      title: 'CAJA DE: ' + d.monthLabel,
+      technician: d.technician,
+      headers: ['FECHA:', 'FAMILIA:', 'SIPI:', 'GASTO:'],
+      cols: [90, 215, 90, 120],
+      aligns: ['c', 'l', 'r', 'r'],
+      rows,
+      footer: { label: 'TOTAL', value: money(total) }
+    });
+    shareFile(blob, sheetFileName('sirc', 'pdf'));
   }
 
   // ─── Export / import ───────────────────────────────────────

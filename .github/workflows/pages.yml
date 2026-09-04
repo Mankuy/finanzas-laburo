@@ -22,7 +22,7 @@ jobs:
       - name: Prepare static site
         run: |
           mkdir -p _site
-          cp index.html app.js sheets.js sw.js manifest.json README.md _site/
+          cp index.html app.js sheets.js pdf.js sw.js manifest.json README.md _site/
           cp -r icons _site/
       - uses: actions/upload-pages-artifact@v3
         with:
