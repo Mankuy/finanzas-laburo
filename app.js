@@ -695,7 +695,8 @@
             <label class="block text-xs text-white/50 mb-1">¿Quién te dio la plata?</label>
             <input name="from" type="text" required maxlength="80" value="${escapeAttr(m?.from || '')}"
               class="w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-violet-light"
-              placeholder="Ej. Cliente Pérez, jefa, transferencia…" />
+              placeholder="Ej. Caro" />
+            <p class="text-[10px] text-white/35 mt-1">Es para vos: en la planilla va como «${escapeHtml(incomeConcept(viewYear, viewMonth))}», sin importar quién.</p>
           </div>
           <div>
             <label class="block text-xs text-white/50 mb-1">Día (fecha del movimiento)</label>
@@ -727,7 +728,7 @@
           <label class="block text-xs text-white/50 mb-1">¿En qué salió?</label>
           <input name="what" id="move-what" type="text" required maxlength="100" value="${escapeAttr(m?.what || '')}"
             class="w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-violet-light"
-            placeholder="Ej. materiales, viáticos, regalo…" />
+            placeholder="Ej. surtido, ferretería, nafta…" />
         </div>
         <div>
           <label class="block text-xs text-white/50 mb-1">Familia / grupo</label>
