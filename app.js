@@ -1262,6 +1262,10 @@
   }
 
   function importData(file) {
+    if (file.size > 5 * 1024 * 1024) {
+      toast('Ese archivo es muy grande, no parece un backup');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       try {
@@ -1289,6 +1293,12 @@
    * están vacías. No mira los movimientos ni crea o borra familias.
    */
   function importSipiFile(file) {
+    // El selector muestra todo (WhatsApp entrega los .json con tipo genérico),
+    // así que acá se ataja el manotazo a un video.
+    if (file.size > 5 * 1024 * 1024) {
+      toast('Ese archivo es muy grande, no parece el de los SIPI');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       try {
