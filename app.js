@@ -37,7 +37,7 @@
       technician: ''
     },
     families: [
-      { id: 'fam-misc', name: 'Varios / sin familia', color: '#6B7280', active: true, children: [], sipis: [], sheetLabel: '' }
+      { id: 'fam-misc', name: 'Varios / sin Familia', color: '#6B7280', active: true, children: [], sipis: [], sheetLabel: '' }
     ],
     teamCategories: DEFAULT_TEAM_CATEGORIES(),
     movements: [],
@@ -329,7 +329,7 @@
   }
 
   function familyName(id) {
-    return familyById(id)?.name || 'Sin familia';
+    return familyById(id)?.name || 'Sin Familia';
   }
 
   function teamCategoryById(id) {
@@ -414,7 +414,7 @@
       return { name: c?.label || 'equipo', color: '#A855F7' };
     }
     const f = familyById(key);
-    return { name: f?.name || 'Sin familia', color: f?.color || '#6B7280' };
+    return { name: f?.name || 'Sin Familia', color: f?.color || '#6B7280' };
   }
 
   /** Cómo se llama el grupo del gasto dentro de la app (familia o rubro de equipo). */
@@ -687,7 +687,7 @@
     }
     const f = familyById(id);
     if (!f) return;
-    if (!confirm(`¿Borrar familia "${f.name}"? Los gastos quedan sin reasignar (se muestran como "Sin familia").`)) return;
+    if (!confirm(`¿Borrar la Familia "${f.name}"? Los gastos quedan sin reasignar (se muestran como "Sin Familia").`)) return;
     state.families = state.families.filter((x) => x.id !== id);
     audit('delete_family', `Borró familia ${f.name}`, { id });
     save();
@@ -1355,7 +1355,7 @@
             <span class="tabular-nums text-rose">${money(amt)}</span>
           </li>
         `).join('')
-      : '<li class="text-xs text-white/40 py-2">Sin gastos del equipo este mes.</li>';
+      : '<li class="text-xs text-white/40 py-2">Sin gastos del Equipo este mes.</li>';
   }
 
   function renderFamilies() {

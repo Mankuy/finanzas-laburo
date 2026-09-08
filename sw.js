@@ -1,5 +1,5 @@
 /* Finanzas Laburo — offline-first cache-first */
-const CACHE = 'finanzas-laburo-v11';
+const CACHE = 'finanzas-laburo-v12';
 const ASSETS = [
   './',
   './index.html',
