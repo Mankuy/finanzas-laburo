@@ -1284,7 +1284,7 @@
     const usados = state.movements.filter((m) => m.teamCategoryId === id).length;
     if (state.teamCategories.length === 1) { toast('Tiene que quedar al menos un rubro'); return; }
     if (!confirm(usados
-      ? `¿Borrar "${c.label}"? Tiene ${usados} gasto(s); no se borran, quedan sin rubro.`
+      ? `¿Borrar "${c.label}"? Tiene ${usados} gasto(s) contando todos los meses; no se borran, quedan sin rubro.`
       : `¿Borrar "${c.label}"?`)) return;
     state.teamCategories = state.teamCategories.filter((x) => x.id !== id);
     audit('delete_team', `Borró el rubro ${c.label}`, { id, usados });
@@ -1324,14 +1324,16 @@
   function renderTeam() {
     const ul = document.getElementById('team-list');
     ul.innerHTML = state.teamCategories.map((c) => {
-      const usados = state.movements.filter((m) => m.teamCategoryId === c.id).length;
+      const delMes = movementsInView().filter((m) => m.teamCategoryId === c.id).length;
+      const detalle = delMes === 0 ? 'sin gastos este mes'
+        : delMes === 1 ? '1 gasto este mes' : delMes + ' gastos este mes';
       return `
         <li class="rounded-xl bg-void/40 px-3 py-3 border border-white/5 flex items-center justify-between gap-2">
           <button type="button" data-edit-team="${escapeAttr(c.id)}" class="flex items-center gap-2 min-w-0 text-left flex-1">
             <span class="w-3 h-3 rounded-full shrink-0" style="background:#A855F7"></span>
             <span class="min-w-0">
               <span class="text-sm truncate block">${escapeHtml(c.label)}</span>
-              <span class="text-[10px] text-white/40 block">${usados} gasto(s)</span>
+              <span class="text-[10px] text-white/40 block">${detalle}</span>
             </span>
           </button>
           <i data-lucide="pencil" class="w-3.5 h-3.5 text-violet-light/60 shrink-0 pointer-events-none"></i>
