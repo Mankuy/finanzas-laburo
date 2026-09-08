@@ -154,6 +154,12 @@
           <p id="home-fam-empty" class="text-xs text-white/40 py-2">Sin gastos por familia.</p>
         </div>
 
+        <div class="glass rounded-2xl p-4">
+          <h2 class="text-sm font-medium text-white/80 mb-3">Equipo (gastos)</h2>
+          <ul id="home-team" class="space-y-2"></ul>
+          <p id="home-team-empty" class="text-xs text-white/40 py-2">Sin gastos del equipo.</p>
+        </div>
+
         <div class="glass rounded-2xl p-4 space-y-3">
           <h2 class="text-sm font-medium text-white/80">Planillas de <span id="sheets-month" class="text-violet-light">—</span></h2>
           <p class="text-[11px] text-white/40">
@@ -224,6 +230,24 @@
         </div>
       </section>
 
+      <!-- EQUIPO -->
+      <section id="tab-team" class="tab-panel space-y-4 pt-2">
+        <div class="glass rounded-2xl p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-medium text-white/80">Rubros del equipo</h2>
+            <button type="button" id="btn-add-team" class="text-xs text-violet-light flex items-center gap-1">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i> Nuevo
+            </button>
+          </div>
+          <p class="text-[11px] text-white/40 mb-3">Los gastos que no son de una familia: nafta, boletos, papelería. Van sin SIPI.</p>
+          <ul id="team-list" class="space-y-2"></ul>
+        </div>
+        <div class="glass rounded-2xl p-4">
+          <h2 class="text-sm font-medium text-white/80 mb-3">Gastos del mes por rubro</h2>
+          <ul id="team-month-totals" class="space-y-2"></ul>
+        </div>
+      </section>
+
       <!-- LOG -->
       <section id="tab-log" class="tab-panel space-y-4 pt-2">
         <h2 class="text-sm font-medium text-white/80">Registro auditable</h2>
@@ -273,7 +297,7 @@
 
     <nav class="fixed bottom-0 left-0 right-0 z-40">
       <div class="max-w-lg mx-auto glass safe-bottom border-t border-violet/20">
-        <div class="grid grid-cols-5 px-1 pt-2 pb-1">
+        <div class="grid grid-cols-6 px-1 pt-2 pb-1">
           <button type="button" data-tab="home" class="nav-item active flex flex-col items-center gap-0.5 py-1.5 text-white/45 text-[10px]">
             <i data-lucide="home" class="w-5 h-5"></i><span>Inicio</span>
             <span class="nav-dot w-1 h-1 rounded-full bg-violet-light"></span>
@@ -284,6 +308,10 @@
           </button>
           <button type="button" data-tab="families" class="nav-item flex flex-col items-center gap-0.5 py-1.5 text-white/45 text-[10px]">
             <i data-lucide="users" class="w-5 h-5"></i><span>Familias</span>
+            <span class="nav-dot w-1 h-1 rounded-full bg-violet-light"></span>
+          </button>
+          <button type="button" data-tab="team" class="nav-item flex flex-col items-center gap-0.5 py-1.5 text-white/45 text-[10px]">
+            <i data-lucide="briefcase" class="w-5 h-5"></i><span>Equipo</span>
             <span class="nav-dot w-1 h-1 rounded-full bg-violet-light"></span>
           </button>
           <button type="button" data-tab="log" class="nav-item flex flex-col items-center gap-0.5 py-1.5 text-white/45 text-[10px]">

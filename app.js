@@ -19,7 +19,7 @@
     },
     {
       id: 'team-equipo',
-      label: 'equipo',
+      label: 'Equipo',
       keywords: [
         'taxi', 'boleto', 'boletos', 'pasaje', 'pasajes', 'omnibus', 'remise', 'uber',
         'peaje', 'estacionamiento',
@@ -60,7 +60,11 @@
       config: { ...base.config, ...(p.config || {}) },
       families: Array.isArray(p.families) && p.families.length ? p.families : base.families,
       teamCategories: Array.isArray(p.teamCategories) && p.teamCategories.length
-        ? p.teamCategories
+        ? p.teamCategories.map((c) => (
+            // El rubro pasó a escribirse con mayúscula. Solo se corrige el que
+            // sigue con el texto original: si alguien lo renombró, se respeta.
+            c.id === 'team-equipo' && c.label === 'equipo' ? { ...c, label: 'Equipo' } : c
+          ))
         : base.teamCategories,
       movements: Array.isArray(p.movements) ? p.movements : [],
       auditLog: Array.isArray(p.auditLog) ? p.auditLog : []
@@ -163,7 +167,8 @@
 
   function monthLabel(y, m) {
     const d = new Date(y, m, 1);
-    return d.toLocaleDateString('es-UY', { month: 'long', year: 'numeric' });
+    const s = d.toLocaleDateString('es-UY', { month: 'long', year: 'numeric' });
+    return s.charAt(0).toUpperCase() + s.slice(1);
   }
 
   function todayISO() {
@@ -734,22 +739,6 @@
     return `<optgroup label="Familias">${fams}</optgroup><optgroup label="Equipo (sin SIPI)">${teams}</optgroup>`;
   }
 
-  /**
-   * Atajos a los rubros de equipo, arriba del selector. Para varias del equipo son
-   * de uso diario (boletos por un lado, papelería por el otro) y quedaban al fondo
-   * de la misma lista que todas las familias. Los chips escriben en el mismo
-   * <select>, así que el resto del formulario no cambia.
-   */
-  function teamChipsHtml(selected) {
-    return state.teamCategories.map((c) => {
-      const val = 'team:' + c.id;
-      const on = val === selected;
-      return `<button type="button" class="team-chip flex-1 py-2 rounded-xl text-xs border transition ${
-        on ? 'bg-violet/40 border-violet-light text-white' : 'bg-void/60 border-violet/25 text-violet-light'
-      }" data-team-value="${escapeAttr(val)}">${escapeHtml(c.label)}</button>`;
-    }).join('');
-  }
-
   /** Valor del <select> para un gasto ya guardado. */
   function moveGroupValue(m) {
     if (!m) return 'fam-misc';
@@ -821,7 +810,7 @@
             const fullLabel = c.name ? `${namePart} <span class="text-white/30">·</span> ${sipiPart}` : `<span class="text-white/80 tabular-nums">SIPI ${escapeHtml(c.sipi)}</span>`;
             return `
               <label class="flex items-center gap-2.5 p-2 rounded-lg bg-void/60 border border-white/5 hover:border-violet/30 cursor-pointer select-none transition">
-                <input type="checkbox" name="move_sipis" value="${escapeAttr(c.sipi)}" class="sipi-move-chk w-4 h-4 rounded accent-rose cursor-pointer" ${isChecked ? 'checked' : ''} />
+                <input type="checkbox" name="move_sipis" value="${escapeAttr(c.sipi)}" class="sipi-move-chk w-4 h-4 rounded accent-violet-light cursor-pointer opacity-80" ${isChecked ? 'checked' : ''} />
                 <span class="text-xs flex-1 flex items-center gap-1.5">${fullLabel}</span>
               </label>
             `;
@@ -886,8 +875,7 @@
           <p class="text-[10px] text-white/35 mt-1">Es para vos: en la planilla va la familia o el rubro, no este detalle.</p>
         </div>
         <div>
-          <label class="block text-xs text-white/50 mb-1">Familia / grupo</label>
-          <div class="flex gap-2 mb-2">${teamChipsHtml(moveGroupValue(m))}</div>
+          <label class="block text-xs text-white/50 mb-1">Familia/equipo</label>
           <select name="familyId" id="move-group"
             class="w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-violet-light">
             ${familyOptions(moveGroupValue(m))}
@@ -925,26 +913,10 @@
     const whatInput = document.getElementById('move-what');
     const sipiSlot = document.getElementById('sipi-slot');
     let groupTouched = Boolean(m); // editando un gasto viejo no auto-sugerimos nada
-    // El <select> manda; los chips solo escriben en él y se pintan según su valor.
-    const pintarChips = () => {
-      document.querySelectorAll('.team-chip').forEach((chip) => {
-        const on = chip.dataset.teamValue === groupSel.value;
-        chip.className = 'team-chip flex-1 py-2 rounded-xl text-xs border transition ' + (on
-          ? 'bg-violet/40 border-violet-light text-white'
-          : 'bg-void/60 border-violet/25 text-violet-light');
-      });
-    };
     if (groupSel && sipiSlot) {
       groupSel.addEventListener('change', () => {
         groupTouched = true;
         sipiSlot.innerHTML = sipiFieldHtml(groupSel.value, m?.sipis || m?.sipi);
-        pintarChips();
-      });
-      document.querySelectorAll('.team-chip').forEach((chip) => {
-        chip.addEventListener('click', () => {
-          groupSel.value = chip.dataset.teamValue;
-          groupSel.dispatchEvent(new Event('change'));
-        });
       });
     }
 
@@ -976,7 +948,6 @@
         if (sug && groupSel.value !== 'team:' + sug) {
           groupSel.value = 'team:' + sug;
           sipiSlot.innerHTML = '';
-          pintarChips();
         }
       });
     }
@@ -1023,10 +994,6 @@
   }
 
   function openFamilyModal(f = null) {
-    const moveCount = f ? state.movements.filter((m) => m.familyId === f.id).length : 0;
-    const teamOpts = state.teamCategories
-      .map((c) => `<option value="${escapeAttr(c.id)}">${escapeHtml(c.label)}</option>`)
-      .join('');
     const children = f ? ensureFamilyChildren(f) : [];
 
     function renderChildRow(c = { id: '', name: '', sipi: '' }) {
@@ -1079,14 +1046,9 @@
           ${f ? 'Guardar' : 'Agregar'}
         </button>
       </form>
-      ${f ? `
-      <div class="mt-5 pt-4 border-t border-white/10 space-y-3">
-        <p class="text-[11px] text-white/40">¿Esto no es una familia sino un gasto del equipo (nafta, boletos)? Pasalo de grupo: los ${moveCount} movimiento(s) se conservan.</p>
-        <div class="flex gap-2">
-          <select id="fam-to-team" class="flex-1 bg-void/60 border border-violet/30 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-violet-light">${teamOpts}</select>
-          <button type="button" id="btn-fam-to-team" class="px-4 rounded-xl border border-violet/40 text-violet-light text-xs shrink-0">Pasar</button>
-        </div>
-        ${f.id !== 'fam-misc' ? `<button type="button" id="btn-del-fam" class="w-full py-3 rounded-2xl border border-red-500/40 text-red-400 text-sm">Eliminar</button>` : ''}
+      ${f && f.id !== 'fam-misc' ? `
+      <div class="mt-5 pt-4 border-t border-white/10">
+        <button type="button" id="btn-del-fam" class="w-full py-3 rounded-2xl border border-red-500/40 text-red-400 text-sm">Eliminar</button>
       </div>` : ''}
     `);
 
@@ -1140,10 +1102,6 @@
     });
 
     if (f) {
-      document.getElementById('btn-fam-to-team')?.addEventListener('click', () => {
-        convertFamilyToTeam(f.id, document.getElementById('fam-to-team').value);
-        closeModal();
-      });
       document.getElementById('btn-del-fam')?.addEventListener('click', () => {
         deleteFamily(f.id);
         closeModal();
@@ -1217,16 +1175,21 @@
       const id = moveGroupKey(m);
       byFam[id] = (byFam[id] || 0) + Number(m.amount);
     }
-    const famUl = document.getElementById('home-families');
-    const famEmpty = document.getElementById('home-fam-empty');
-    const entries = Object.entries(byFam).sort((a, b) => b[1] - a[1]);
-    if (!entries.length) {
-      famUl.innerHTML = '';
-      famEmpty.classList.remove('hidden');
-    } else {
-      famEmpty.classList.add('hidden');
+    // Los gastos de familia y los del equipo se muestran por separado: son dos
+    // cosas distintas y mezclarlas obligaba a leer la lista entera para saber cuál
+    // es cuál.
+    const todas = Object.entries(byFam).sort((a, b) => b[1] - a[1]);
+    const pintarLista = (ulId, emptyId, entries) => {
+      const ul = document.getElementById(ulId);
+      const empty = document.getElementById(emptyId);
+      if (!entries.length) {
+        ul.innerHTML = '';
+        empty.classList.remove('hidden');
+        return;
+      }
+      empty.classList.add('hidden');
       const max = entries[0][1] || 1;
-      famUl.innerHTML = entries.map(([id, amt]) => {
+      ul.innerHTML = entries.map(([id, amt]) => {
         const { name, color } = groupMeta(id);
         const pct = Math.round((amt / max) * 100);
         return `
@@ -1244,7 +1207,9 @@
           </li>
         `;
       }).join('');
-    }
+    };
+    pintarLista('home-families', 'home-fam-empty', todas.filter(([id]) => !String(id).startsWith('team:')));
+    pintarLista('home-team', 'home-team-empty', todas.filter(([id]) => String(id).startsWith('team:')));
   }
 
   function renderMoves() {
@@ -1281,6 +1246,114 @@
         `;
       }).join('');
     }
+  }
+
+  // ─── Rubros del equipo ─────────────────────────────────────
+  function addTeamCategory(label) {
+    const l = String(label || '').trim();
+    if (!l) { toast('Poné un nombre'); return false; }
+    if (state.teamCategories.some((c) => normalizeName(c.label) === normalizeName(l))) {
+      toast('Ya existe un rubro con ese nombre');
+      return false;
+    }
+    const c = { id: uid(), label: l, keywords: [] };
+    state.teamCategories.push(c);
+    audit('add_team', `Rubro de equipo: ${l}`, { id: c.id });
+    save();
+    render();
+    toast('Rubro agregado');
+    return true;
+  }
+
+  function updateTeamCategory(id, label) {
+    const c = teamCategoryById(id);
+    const l = String(label || '').trim();
+    if (!c || !l) return;
+    const before = c.label;
+    c.label = l;
+    audit('edit_team', `Rubro ${before} → ${l}`, { id });
+    save();
+    render();
+    toast('Rubro actualizado');
+  }
+
+  /** Borrar un rubro no borra sus gastos: quedan sin rubro y se ven al exportar. */
+  function deleteTeamCategory(id) {
+    const c = teamCategoryById(id);
+    if (!c) return;
+    const usados = state.movements.filter((m) => m.teamCategoryId === id).length;
+    if (state.teamCategories.length === 1) { toast('Tiene que quedar al menos un rubro'); return; }
+    if (!confirm(usados
+      ? `¿Borrar "${c.label}"? Tiene ${usados} gasto(s); no se borran, quedan sin rubro.`
+      : `¿Borrar "${c.label}"?`)) return;
+    state.teamCategories = state.teamCategories.filter((x) => x.id !== id);
+    audit('delete_team', `Borró el rubro ${c.label}`, { id, usados });
+    save();
+    render();
+    toast('Rubro borrado');
+  }
+
+  function openTeamModal(c = null) {
+    openModal(c ? 'Editar rubro' : 'Nuevo rubro', `
+      <form id="team-form" class="space-y-4">
+        <div>
+          <label class="block text-xs text-white/50 mb-1">Nombre</label>
+          <input name="label" type="text" required maxlength="60" value="${escapeAttr(c?.label || '')}"
+            class="w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-violet-light"
+            placeholder="Ej. Locomocion equipo" />
+          <p class="text-[10px] text-white/35 mt-1">Así sale en la columna CONCEPTO de la planilla.</p>
+        </div>
+        <button type="submit" class="w-full py-3 rounded-2xl bg-gradient-to-r from-violet to-violet-soft font-semibold text-sm">
+          ${c ? 'Guardar' : 'Agregar'}
+        </button>
+      </form>
+      ${c ? `<button type="button" id="btn-del-team" class="w-full py-3 mt-3 rounded-2xl border border-red-500/40 text-red-400 text-sm">Eliminar</button>` : ''}
+    `);
+    document.getElementById('team-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const l = new FormData(e.target).get('label');
+      if (c) updateTeamCategory(c.id, l); else addTeamCategory(l);
+      closeModal();
+    });
+    document.getElementById('btn-del-team')?.addEventListener('click', () => {
+      deleteTeamCategory(c.id);
+      closeModal();
+    });
+  }
+
+  function renderTeam() {
+    const ul = document.getElementById('team-list');
+    ul.innerHTML = state.teamCategories.map((c) => {
+      const usados = state.movements.filter((m) => m.teamCategoryId === c.id).length;
+      return `
+        <li class="rounded-xl bg-void/40 px-3 py-3 border border-white/5 flex items-center justify-between gap-2">
+          <button type="button" data-edit-team="${escapeAttr(c.id)}" class="flex items-center gap-2 min-w-0 text-left flex-1">
+            <span class="w-3 h-3 rounded-full shrink-0" style="background:#A855F7"></span>
+            <span class="min-w-0">
+              <span class="text-sm truncate block">${escapeHtml(c.label)}</span>
+              <span class="text-[10px] text-white/40 block">${usados} gasto(s)</span>
+            </span>
+          </button>
+          <i data-lucide="pencil" class="w-3.5 h-3.5 text-violet-light/60 shrink-0 pointer-events-none"></i>
+        </li>
+      `;
+    }).join('');
+
+    const t = monthTotals();
+    const porRubro = {};
+    for (const m of t.list.filter((x) => x.type === 'expense' && x.teamCategoryId)) {
+      porRubro[m.teamCategoryId] = (porRubro[m.teamCategoryId] || 0) + Number(m.amount);
+    }
+    const totUl = document.getElementById('team-month-totals');
+    const entries = Object.entries(porRubro).sort((a, b) => b[1] - a[1]);
+    totUl.innerHTML = entries.length
+      ? entries.map(([id, amt]) => `
+          <li class="flex justify-between text-sm py-1.5 border-b border-white/5">
+            <span class="truncate">${escapeHtml(teamCategoryById(id)?.label || 'Sin rubro')}</span>
+            <span class="tabular-nums text-rose">${money(amt)}</span>
+          </li>
+        `).join('')
+      : '<li class="text-xs text-white/40 py-2">Sin gastos del equipo este mes.</li>';
   }
 
   function renderFamilies() {
@@ -1378,6 +1451,7 @@
     renderHome();
     renderMoves();
     renderFamilies();
+    renderTeam();
     renderLog();
     renderConfig();
     lucide.createIcons();
@@ -1388,6 +1462,7 @@
     home: 'Inicio',
     moves: 'Movimientos',
     families: 'Familias',
+    team: 'Equipo',
     log: 'Log',
     config: 'Configuración'
   };
@@ -1672,6 +1747,7 @@
     document.getElementById('btn-add-expense-2').addEventListener('click', () => openMoveModal('expense'));
     document.getElementById('btn-go-moves').addEventListener('click', () => switchTab('moves'));
     document.getElementById('btn-add-family').addEventListener('click', () => openFamilyModal());
+    document.getElementById('btn-add-team').addEventListener('click', () => openTeamModal());
 
     document.querySelectorAll('.move-filter').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -1691,6 +1767,11 @@
       if (ef) {
         const f = familyById(ef.dataset.editFam);
         if (f) openFamilyModal(f);
+      }
+      const et = e.target.closest('[data-edit-team]');
+      if (et) {
+        const c = teamCategoryById(et.dataset.editTeam);
+        if (c) openTeamModal(c);
       }
     });
 
