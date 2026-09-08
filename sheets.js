@@ -288,7 +288,7 @@ window.FLSheets = (function () {
       ]));
     }
 
-    const lastDate = data.rows.length ? data.rows[data.rows.length - 1].date : null;
+    const lastDate = (data.rows.filter((r) => r && r.date).pop() || {}).date || null;
     out.push(row(FINAL, [
       cell('A' + FINAL, lastDate ? serial(lastDate) : '', S.titleLeft),
       cell('B' + FINAL, 'SALDO FINAL', S.header, 's'),
@@ -332,7 +332,7 @@ window.FLSheets = (function () {
       ]));
     }
 
-    const lastDate = data.rows.length ? data.rows[data.rows.length - 1].date : null;
+    const lastDate = (data.rows.filter((r) => r && r.date).pop() || {}).date || null;
     out.push(row(FINAL, [
       cell('A' + FINAL, lastDate ? serial(lastDate) : '', S.titleLeft),
       cell('B' + FINAL, 'SALDO FINAL', S.header, 's'),

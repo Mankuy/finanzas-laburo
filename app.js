@@ -37,12 +37,12 @@
       technician: ''
     },
     families: [
-      { id: 'fam-misc', name: 'Varios / sin familia', color: '#6B7280', active: true, sipis: [], sheetLabel: '' }
+      { id: 'fam-misc', name: 'Varios / sin familia', color: '#6B7280', active: true, children: [], sipis: [], sheetLabel: '' }
     ],
     teamCategories: DEFAULT_TEAM_CATEGORIES(),
     movements: [],
     // { id, type:'income'|'expense', amount, date:'YYYY-MM-DD',
-    //   from?, what?, familyId?, sipi?, teamCategoryId?, carryover?,
+    //   from?, what?, familyId?, sipi?, sipis?, teamCategoryId?, carryover?,
     //   note, createdAt, updatedAt, edited }
     auditLog: [],
     seenSipiSuggestion: false
@@ -65,11 +65,26 @@
       movements: Array.isArray(p.movements) ? p.movements : [],
       auditLog: Array.isArray(p.auditLog) ? p.auditLog : []
     };
-    out.families = out.families.map((f) => ({
-      ...f,
-      sipis: Array.isArray(f.sipis) ? f.sipis : (f.sipi ? [String(f.sipi)] : []),
-      sheetLabel: typeof f.sheetLabel === 'string' ? f.sheetLabel : ''
-    }));
+    out.families = out.families.map((f) => {
+      let children = Array.isArray(f.children) ? f.children : [];
+      if (!children.length) {
+        const raw = Array.isArray(f.sipis) ? f.sipis : (f.sipi ? [String(f.sipi)] : []);
+        children = raw.map((s, idx) => ({ id: 'ch-' + idx + '-' + String(s).trim(), name: '', sipi: String(s).trim() }));
+      }
+      // `children` queda como única fuente: se descartan los campos viejos para que
+      // no puedan quedar desincronizados con la lista real de chiquilines.
+      const { sipis, sipi, ...resto } = f;
+      return {
+        ...resto,
+        children,
+        sheetLabel: typeof f.sheetLabel === 'string' ? f.sheetLabel : ''
+      };
+    });
+    out.movements = out.movements.map((m) => {
+      const sipis = Array.isArray(m.sipis) ? m.sipis : (m.sipi ? [String(m.sipi)] : []);
+      const { sipi, ...resto } = m;   // idem: el gasto guarda sus SIPI en un solo lugar
+      return { ...resto, sipis };
+    });
     out.version = SCHEMA_VERSION;
     return out;
   }
@@ -262,7 +277,7 @@
       what: '',
       familyId: null,
       teamCategoryId: null,
-      sipi: '',
+      sipis: [],
       note: 'Saldo que viene de ' + monthLabel(py, pm),
       carryover: true,
       edited: false,
@@ -297,6 +312,17 @@
     return state.families.find((f) => f.id === id);
   }
 
+  /** Garantiza que la familia tenga su estructura children sincronizada con sipis. */
+  function ensureFamilyChildren(f) {
+    if (!f) return [];
+    if (!Array.isArray(f.children)) f.children = [];
+    if (!f.children.length && Array.isArray(f.sipis) && f.sipis.length) {
+      f.children = f.sipis.map((s, idx) => ({ id: 'ch-' + idx + '-' + String(s).trim(), name: '', sipi: String(s).trim() }));
+      delete f.sipis;
+    }
+    return f.children;
+  }
+
   function familyName(id) {
     return familyById(id)?.name || 'Sin familia';
   }
@@ -318,13 +344,56 @@
   }
 
   /**
-   * SIPI que va a la planilla. Los movimientos cargados antes de que existiera el
-   * campo no lo tienen guardado, así que se cae al de la familia.
+   * SIPI que va a la planilla (primer SIPI o único).
    */
   function expenseSipi(m) {
     if (m.teamCategoryId) return '';
+    if (Array.isArray(m.sipis) && m.sipis.length) return m.sipis[0];
     if (m.sipi) return m.sipi;
-    return (familyById(m.familyId)?.sipis || [])[0] || '';
+    const f = familyById(m.familyId);
+    if (f) {
+      const ch = ensureFamilyChildren(f);
+      if (ch.length) return ch[0].sipi || '';
+    }
+    return '';
+  }
+
+  /**
+   * Todos los SIPIs asignados a un gasto.
+   */
+  function expenseSipis(m) {
+    if (m.teamCategoryId) return [];
+    if (Array.isArray(m.sipis) && m.sipis.length) return m.sipis;
+    if (m.sipi) return [m.sipi];
+    // Un gasto viejo no tiene SIPI propio: se completa con el primero de la familia,
+    // aunque tenga varios chiquilines. Es lo que ya salió en las rendiciones entregadas;
+    // dejarlo vacío las pondría en desacuerdo con lo presentado.
+    const f = familyById(m.familyId);
+    if (f) {
+      const ch = ensureFamilyChildren(f);
+      if (ch.length) return [ch[0].sipi];
+    }
+    return [];
+  }
+
+  /**
+   * Etiqueta amigable de los chiquilines/SIPIs para mostrar en la lista de movimientos.
+   */
+  function moveChildrenLabel(m) {
+    if (m.teamCategoryId || !m.familyId) return '';
+    const f = familyById(m.familyId);
+    if (!f) return '';
+    const sipis = expenseSipis(m);
+    if (!sipis.length) return '';
+    const ch = ensureFamilyChildren(f);
+    if (ch.length > 1 && sipis.length === ch.length) {
+      return 'Todos';
+    }
+    const names = sipis.map((s) => {
+      const child = ch.find((c) => c.sipi === s);
+      return child?.name || s;
+    });
+    return names.join(', ');
   }
 
   /** Clave con la que se agrupan los gastos: familia o rubro de equipo. */
@@ -369,19 +438,6 @@
    * chiquilines bajo protección y esto se publica en un repo abierto.
    * Solo devuelve familias que todavía no tienen SIPI, así nada se pisa.
    */
-  function pendingSipiMatches(table) {
-    if (!Array.isArray(table) || !table.length) return [];
-    return state.families
-      .filter((f) => !(f.sipis || []).length)
-      .map((f) => {
-        const hit = table.find((k) => normalizeName(k.nombre || k.name) === normalizeName(f.name));
-        if (!hit) return null;
-        const sipis = (hit.sipis || []).map(String).filter(Boolean);
-        if (!sipis.length) return null;
-        return { familyId: f.id, familyName: f.name, sipis, label: hit.rotulo || hit.label || '' };
-      })
-      .filter(Boolean);
-  }
 
   /**
    * Familias que en realidad son un rubro de equipo, detectadas porque se llaman
@@ -445,6 +501,16 @@
     const isTeam = type === 'expense' && String(data.familyId || '').startsWith('team:');
     const teamCategoryId = isTeam ? String(data.familyId).slice(5) : null;
 
+    let moveSipis = [];
+    if (type === 'expense' && !isTeam) {
+      if (Array.isArray(data.sipis) && data.sipis.length) {
+        moveSipis = data.sipis.map(String).map((s) => s.trim()).filter(Boolean);
+      } else if (data.sipi) {
+        const s = String(data.sipi).trim();
+        if (s) moveSipis = [s];
+      }
+    }
+
     const now = new Date().toISOString();
     const payload = {
       type,
@@ -454,18 +520,25 @@
       what: type === 'expense' ? String(data.what || '').trim() : '',
       familyId: type === 'expense' && !isTeam ? (data.familyId || null) : null,
       teamCategoryId,
-      sipi: type === 'expense' && !isTeam ? String(data.sipi || '').trim() : '',
+      sipis: moveSipis,
+      sipi: moveSipis[0] || '',
       note: String(data.note || '').trim()
     };
 
     if (payload.familyId) {
       const f = familyById(payload.familyId);
-      const list = f?.sipis || [];
-      if (!payload.sipi && list.length === 1) {
-        payload.sipi = list[0]; // familia con un solo SIPI: se completa sin preguntar
-      } else if (f && payload.sipi && !list.includes(payload.sipi)) {
-        f.sipis = [...list, payload.sipi]; // lo cargaste una vez, queda en la familia
-        audit('add_sipi', `SIPI ${payload.sipi} → ${f.name}`, { id: f.id });
+      if (f) {
+        const ch = ensureFamilyChildren(f);
+        if (!payload.sipis.length && ch.length === 1) {
+          payload.sipis = [ch[0].sipi];
+        } else if (payload.sipis.length) {
+          for (const s of payload.sipis) {
+            if (s && !ch.some((c) => c.sipi === s)) {
+              ch.push({ id: uid(), name: '', sipi: s });
+              audit('add_sipi', `SIPI ${s} → ${f.name}`, { id: f.id });
+            }
+          }
+        }
       }
     }
 
@@ -517,14 +590,25 @@
   }
 
   // ─── Families ──────────────────────────────────────────────
-  function addFamily(name) {
-    const n = String(name || '').trim();
+  function addFamily(dataOrName) {
+    const isObj = typeof dataOrName === 'object' && dataOrName !== null;
+    const n = String(isObj ? dataOrName.name : dataOrName || '').trim();
     if (!n) {
       toast('Nombre vacío');
       return false;
     }
     const color = FAMILY_COLORS[state.families.length % FAMILY_COLORS.length];
-    const f = { id: uid(), name: n, color, active: true };
+    const children = isObj && Array.isArray(dataOrName.children) ? dataOrName.children : [];
+    const sipis = children.map((c) => String(c.sipi || '').trim()).filter(Boolean);
+    const f = {
+      id: uid(),
+      name: n,
+      color,
+      active: true,
+      children,
+      sipis,
+      sheetLabel: isObj && dataOrName.sheetLabel ? String(dataOrName.sheetLabel).trim() : ''
+    };
     state.families.push(f);
     audit('add_family', `Familia: ${n}`, { id: f.id });
     save();
@@ -538,14 +622,27 @@
     if (!f) return;
     const n = String(data.name || '').trim();
     if (!n) return;
-    const before = { name: f.name, sipis: [...(f.sipis || [])], sheetLabel: f.sheetLabel || '' };
+    const before = {
+      name: f.name,
+      children: JSON.parse(JSON.stringify(f.children || [])),
+      sheetLabel: f.sheetLabel || ''
+    };
     f.name = n;
-    f.sipis = String(data.sipis || '')
-      .split(/[\n,;]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
+    if (Array.isArray(data.children)) {
+      f.children = data.children;
+    } else if (data.sipis !== undefined) {
+      const raw = String(data.sipis || '')
+        .split(/[\n,;]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      f.children = raw.map((s, idx) => ({ id: 'ch-' + idx + '-' + s, name: '', sipi: s }));
+    }
     f.sheetLabel = String(data.sheetLabel || '').trim();
-    audit('edit_family', `Editó familia ${n}`, { id, before, after: { name: f.name, sipis: f.sipis, sheetLabel: f.sheetLabel } });
+    audit('edit_family', `Editó familia ${n}`, {
+      id,
+      before,
+      after: { name: f.name, children: f.children, sipis: f.sipis, sheetLabel: f.sheetLabel }
+    });
     save();
     render();
     toast('Familia actualizada');
@@ -566,7 +663,7 @@
     for (const m of affected) {
       m.familyId = null;
       m.teamCategoryId = teamCategoryId;
-      m.sipi = '';
+      m.sipis = [];
       m.updatedAt = new Date().toISOString();
     }
     if (id !== 'fam-misc') state.families = state.families.filter((x) => x.id !== id);
@@ -637,6 +734,22 @@
     return `<optgroup label="Familias">${fams}</optgroup><optgroup label="Equipo (sin SIPI)">${teams}</optgroup>`;
   }
 
+  /**
+   * Atajos a los rubros de equipo, arriba del selector. Para varias del equipo son
+   * de uso diario (boletos por un lado, papelería por el otro) y quedaban al fondo
+   * de la misma lista que todas las familias. Los chips escriben en el mismo
+   * <select>, así que el resto del formulario no cambia.
+   */
+  function teamChipsHtml(selected) {
+    return state.teamCategories.map((c) => {
+      const val = 'team:' + c.id;
+      const on = val === selected;
+      return `<button type="button" class="team-chip flex-1 py-2 rounded-xl text-xs border transition ${
+        on ? 'bg-violet/40 border-violet-light text-white' : 'bg-void/60 border-violet/25 text-violet-light'
+      }" data-team-value="${escapeAttr(val)}">${escapeHtml(c.label)}</button>`;
+    }).join('');
+  }
+
   /** Valor del <select> para un gasto ya guardado. */
   function moveGroupValue(m) {
     if (!m) return 'fam-misc';
@@ -647,33 +760,74 @@
   /**
    * Bloque SIPI del formulario de gasto. Se redibuja al cambiar de familia:
    * - equipo → nada
-   * - familia con 1 SIPI → nada (se usa ese)
-   * - familia con varios → selector
-   * - familia sin SIPI → input, y lo que cargues queda guardado en la familia
+   * - familia con 1 chiquilín/SIPI → indicador informativo (se asigna directo)
+   * - familia con varios → casillas de verificación (uno, varios o todos)
+   * - familia sin SIPI → input para cargarlo y guardarlo en la familia
    */
-  function sipiFieldHtml(groupValue, currentSipi) {
+  function sipiFieldHtml(groupValue, currentSipis) {
     if (!groupValue || groupValue.startsWith('team:')) return '';
     const f = familyById(groupValue);
-    const list = f?.sipis || [];
-    if (list.length === 1) return '';
-    if (list.length > 1) {
-      const opts = list
-        .map((s) => `<option value="${escapeAttr(s)}" ${s === currentSipi ? 'selected' : ''}>${escapeHtml(s)}</option>`)
-        .join('');
+    if (!f) return '';
+    const children = ensureFamilyChildren(f);
+
+    const activeSipis = Array.isArray(currentSipis)
+      ? currentSipis.map(String).filter(Boolean)
+      : (currentSipis ? [String(currentSipis).trim()].filter(Boolean) : []);
+
+    if (children.length === 0) {
+      const singleVal = activeSipis[0] || '';
       return `
         <div>
-          <label class="block text-xs text-white/50 mb-1">SIPI (esta familia tiene ${list.length})</label>
-          <select name="sipi" class="w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-violet-light">${opts}</select>
+          <label class="block text-xs text-white/50 mb-1">SIPI de ${escapeHtml(f.name || 'la familia')}</label>
+          <input name="sipi" type="text" inputmode="numeric" maxlength="20" value="${escapeAttr(singleVal)}"
+            class="w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-violet-light"
+            placeholder="Ej. 123456" />
+          <p class="text-[10px] text-white/35 mt-1">Se guarda en la familia. No te lo vuelve a pedir.</p>
         </div>
       `;
     }
+
+    if (children.length === 1) {
+      const ch = children[0];
+      const namePart = ch.name ? `${escapeHtml(ch.name)} · ` : '';
+      return `
+        <div class="rounded-xl bg-void/40 px-3 py-2 border border-white/5 flex items-center justify-between text-xs">
+          <span class="text-white/40">Imputa a:</span>
+          <span class="text-white/80 tabular-nums font-medium">${namePart}SIPI ${escapeHtml(ch.sipi)}</span>
+        </div>
+      `;
+    }
+
+    // Familia con varios chiquilines: casillas con Nombre · SIPI y botón Todos
+    // Arrancan desmarcadas a propósito: marcar todos por defecto hace fácil imputarle
+    // un gasto a un chiquilín que no correspondía sin darse cuenta, y eso se descubre
+    // tarde. Elegir es un toque más; la validación no deja guardar sin ninguno.
+    const selectedSet = new Set(activeSipis);
+    const allChecked = children.every((c) => selectedSet.has(c.sipi));
+
     return `
-      <div>
-        <label class="block text-xs text-white/50 mb-1">SIPI de ${escapeHtml(f?.name || 'la familia')}</label>
-        <input name="sipi" type="text" inputmode="numeric" maxlength="20" value="${escapeAttr(currentSipi || '')}"
-          class="w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-violet-light"
-          placeholder="Ej. 123456" />
-        <p class="text-[10px] text-white/35 mt-1">Se guarda en la familia. No te lo vuelve a pedir.</p>
+      <div class="space-y-2 bg-void/40 p-3 rounded-xl border border-violet/20">
+        <div class="flex items-center justify-between">
+          <label class="block text-xs font-medium text-white/70">¿A quién(es) corresponde?</label>
+          <button type="button" id="btn-toggle-all-sipis" class="text-[11px] text-violet-light hover:text-white font-medium transition">
+            ${allChecked ? 'Desmarcar todos' : 'Marcar todos'}
+          </button>
+        </div>
+        <div class="space-y-1.5" id="sipi-checkboxes-group">
+          ${children.map((c) => {
+            const isChecked = selectedSet.has(c.sipi);
+            const namePart = c.name ? `<span class="font-medium text-white">${escapeHtml(c.name)}</span>` : '';
+            const sipiPart = `<span class="text-white/40 tabular-nums text-[11px]">SIPI ${escapeHtml(c.sipi)}</span>`;
+            const fullLabel = c.name ? `${namePart} <span class="text-white/30">·</span> ${sipiPart}` : `<span class="text-white/80 tabular-nums">SIPI ${escapeHtml(c.sipi)}</span>`;
+            return `
+              <label class="flex items-center gap-2.5 p-2 rounded-lg bg-void/60 border border-white/5 hover:border-violet/30 cursor-pointer select-none transition">
+                <input type="checkbox" name="move_sipis" value="${escapeAttr(c.sipi)}" class="sipi-move-chk w-4 h-4 rounded accent-rose cursor-pointer" ${isChecked ? 'checked' : ''} />
+                <span class="text-xs flex-1 flex items-center gap-1.5">${fullLabel}</span>
+              </label>
+            `;
+          }).join('')}
+        </div>
+        <p class="text-[10px] text-white/35">Elegí uno, varios o todos. Se rinde en renglones separados por SIPI.</p>
       </div>
     `;
   }
@@ -733,12 +887,13 @@
         </div>
         <div>
           <label class="block text-xs text-white/50 mb-1">Familia / grupo</label>
+          <div class="flex gap-2 mb-2">${teamChipsHtml(moveGroupValue(m))}</div>
           <select name="familyId" id="move-group"
             class="w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-violet-light">
             ${familyOptions(moveGroupValue(m))}
           </select>
         </div>
-        <div id="sipi-slot">${sipiFieldHtml(moveGroupValue(m), m?.sipi)}</div>
+        <div id="sipi-slot">${sipiFieldHtml(moveGroupValue(m), m?.sipis || m?.sipi)}</div>
         <div>
           <label class="block text-xs text-white/50 mb-1">Día (fecha del movimiento)</label>
           <input name="date" type="date" required value="${escapeAttr(date)}"
@@ -770,12 +925,49 @@
     const whatInput = document.getElementById('move-what');
     const sipiSlot = document.getElementById('sipi-slot');
     let groupTouched = Boolean(m); // editando un gasto viejo no auto-sugerimos nada
+    // El <select> manda; los chips solo escriben en él y se pintan según su valor.
+    const pintarChips = () => {
+      document.querySelectorAll('.team-chip').forEach((chip) => {
+        const on = chip.dataset.teamValue === groupSel.value;
+        chip.className = 'team-chip flex-1 py-2 rounded-xl text-xs border transition ' + (on
+          ? 'bg-violet/40 border-violet-light text-white'
+          : 'bg-void/60 border-violet/25 text-violet-light');
+      });
+    };
     if (groupSel && sipiSlot) {
       groupSel.addEventListener('change', () => {
         groupTouched = true;
-        sipiSlot.innerHTML = sipiFieldHtml(groupSel.value, m?.sipi);
+        sipiSlot.innerHTML = sipiFieldHtml(groupSel.value, m?.sipis || m?.sipi);
+        pintarChips();
+      });
+      document.querySelectorAll('.team-chip').forEach((chip) => {
+        chip.addEventListener('click', () => {
+          groupSel.value = chip.dataset.teamValue;
+          groupSel.dispatchEvent(new Event('change'));
+        });
       });
     }
+
+    if (sipiSlot) {
+      sipiSlot.addEventListener('click', (e) => {
+        const btn = e.target.closest('#btn-toggle-all-sipis');
+        if (!btn) return;
+        const chks = sipiSlot.querySelectorAll('.sipi-move-chk');
+        const allChecked = [...chks].every((c) => c.checked);
+        chks.forEach((c) => { c.checked = !allChecked; });
+        btn.textContent = allChecked ? 'Marcar todos' : 'Desmarcar todos';
+      });
+
+      sipiSlot.addEventListener('change', (e) => {
+        if (!e.target.classList.contains('sipi-move-chk')) return;
+        const btn = sipiSlot.querySelector('#btn-toggle-all-sipis');
+        if (!btn) return;
+        const chks = sipiSlot.querySelectorAll('.sipi-move-chk');
+        const allChecked = [...chks].every((c) => c.checked);
+        btn.textContent = allChecked ? 'Desmarcar todos' : 'Marcar todos';
+      });
+    }
+
     // "nafta" → Locomocion equipo, "boletos" → equipo. Solo mientras no toques el selector.
     if (whatInput && groupSel && sipiSlot) {
       whatInput.addEventListener('input', () => {
@@ -784,6 +976,7 @@
         if (sug && groupSel.value !== 'team:' + sug) {
           groupSel.value = 'team:' + sug;
           sipiSlot.innerHTML = '';
+          pintarChips();
         }
       });
     }
@@ -791,14 +984,34 @@
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const fd = new FormData(form);
+      const moveType = form.dataset.type;
+      const groupVal = fd.get('familyId');
+      const isTeam = moveType === 'expense' && String(groupVal || '').startsWith('team:');
+
+      let sipis = [];
+      if (moveType === 'expense' && !isTeam) {
+        const chks = form.querySelectorAll('.sipi-move-chk');
+        if (chks.length > 0) {
+          sipis = [...chks].filter((c) => c.checked).map((c) => c.value);
+          if (!sipis.length) {
+            toast('Seleccioná al menos un chiquilín / SIPI');
+            return;
+          }
+        } else {
+          const singleSipi = String(fd.get('sipi') || '').trim();
+          if (singleSipi) sipis = [singleSipi];
+        }
+      }
+
       const ok = upsertMovement({
-        type: form.dataset.type,
+        type: moveType,
         amount: fd.get('amount'),
         date: fd.get('date'),
         from: fd.get('from'),
         what: fd.get('what'),
         familyId: fd.get('familyId'),
-        sipi: fd.get('sipi'),
+        sipi: sipis[0] || fd.get('sipi') || '',
+        sipis,
         note: fd.get('note')
       }, form.dataset.id || null);
       if (ok) closeModal();
@@ -814,6 +1027,26 @@
     const teamOpts = state.teamCategories
       .map((c) => `<option value="${escapeAttr(c.id)}">${escapeHtml(c.label)}</option>`)
       .join('');
+    const children = f ? ensureFamilyChildren(f) : [];
+
+    function renderChildRow(c = { id: '', name: '', sipi: '' }) {
+      const cid = c.id || uid();
+      return `
+        <div class="child-row flex items-center gap-2 bg-void/40 p-2 rounded-xl border border-white/5" data-id="${escapeAttr(cid)}">
+          <input type="text" name="child_name" placeholder="Nombre (ej. Valentín)" value="${escapeAttr(c.name || '')}"
+            class="flex-1 min-w-0 bg-void/60 border border-violet/30 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-white/30 focus:outline-none focus:border-violet-light" />
+          <input type="text" name="child_sipi" inputmode="numeric" placeholder="SIPI (ej. 700963)" value="${escapeAttr(c.sipi || '')}"
+            class="w-28 sm:w-32 bg-void/60 border border-violet/30 rounded-lg px-2.5 py-1.5 text-xs text-white tabular-nums placeholder-white/30 focus:outline-none focus:border-violet-light" />
+          <button type="button" class="btn-remove-child p-1.5 text-white/40 hover:text-red-400 shrink-0" title="Quitar">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5 pointer-events-none"></i>
+          </button>
+        </div>
+      `;
+    }
+
+    const initialRows = children.length
+      ? children.map(renderChildRow).join('')
+      : renderChildRow();
 
     openModal(f ? 'Editar familia' : 'Nueva familia', `
       <form id="fam-form" class="space-y-4">
@@ -823,21 +1056,25 @@
             class="w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-violet-light"
             placeholder="Ej. Familia Pérez" />
         </div>
-        ${f ? `
         <div>
-          <label class="block text-xs text-white/50 mb-1">SIPI</label>
-          <textarea name="sipis" rows="2"
-            class="w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-violet-light"
-            placeholder="123456, 789012">${escapeHtml((f.sipis || []).join(', '))}</textarea>
-          <p class="text-[10px] text-white/35 mt-1">Si la familia tiene más de uno, separalos con coma. Al cargar un gasto vas a poder elegir cuál.</p>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="block text-xs text-white/50">Chiquilines (nombre y SIPI)</label>
+            <button type="button" id="btn-add-child-row" class="text-xs text-violet-light hover:text-white flex items-center gap-1 font-medium transition">
+              <i data-lucide="plus" class="w-3.5 h-3.5 pointer-events-none"></i> Agregar
+            </button>
+          </div>
+          <div id="children-list-container" class="space-y-2">
+            ${initialRows}
+          </div>
+          <p class="text-[10px] text-white/35 mt-1.5">El nombre es opcional. Sirve para reconocerlo fácil al cargar gastos (ej. "Valentín · 700963").</p>
         </div>
         <div>
           <label class="block text-xs text-white/50 mb-1">Nombre en la planilla (opcional)</label>
-          <input name="sheetLabel" type="text" maxlength="80" value="${escapeAttr(f.sheetLabel || '')}"
+          <input name="sheetLabel" type="text" maxlength="80" value="${escapeAttr(f?.sheetLabel || '')}"
             class="w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-violet-light"
-            placeholder="${escapeAttr(f.name)}" />
+            placeholder="${escapeAttr(f?.name || 'Ej. Familia Pérez')}" />
           <p class="text-[10px] text-white/35 mt-1">Cómo querés que salga en la columna CONCEPTO. Si lo dejás vacío usa el nombre.</p>
-        </div>` : ''}
+        </div>
         <button type="submit" class="w-full py-3 rounded-2xl bg-gradient-to-r from-violet to-violet-soft font-semibold text-sm">
           ${f ? 'Guardar' : 'Agregar'}
         </button>
@@ -853,21 +1090,65 @@
       </div>` : ''}
     `);
 
+    if (window.lucide) window.lucide.createIcons();
+
+    const container = document.getElementById('children-list-container');
+    document.getElementById('btn-add-child-row')?.addEventListener('click', () => {
+      container.insertAdjacentHTML('beforeend', renderChildRow());
+      if (window.lucide) window.lucide.createIcons();
+    });
+
+    container?.addEventListener('click', (e) => {
+      const btn = e.target.closest('.btn-remove-child');
+      if (!btn) return;
+      const row = btn.closest('.child-row');
+      const allRows = container.querySelectorAll('.child-row');
+      if (allRows.length <= 1) {
+        row.querySelectorAll('input').forEach((inp) => { inp.value = ''; });
+      } else {
+        row.remove();
+      }
+    });
+
     document.getElementById('fam-form').addEventListener('submit', (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
-      if (f) updateFamily(f.id, { name: fd.get('name'), sipis: fd.get('sipis'), sheetLabel: fd.get('sheetLabel') });
-      else addFamily(fd.get('name'));
+      const childRows = document.querySelectorAll('#children-list-container .child-row');
+      const parsedChildren = [];
+      childRows.forEach((row) => {
+        const name = (row.querySelector('input[name="child_name"]')?.value || '').trim();
+        const sipi = (row.querySelector('input[name="child_sipi"]')?.value || '').trim();
+        if (sipi || name) {
+          parsedChildren.push({ id: row.dataset.id || uid(), name, sipi });
+        }
+      });
+
+      if (f) {
+        updateFamily(f.id, {
+          name: fd.get('name'),
+          children: parsedChildren,
+          sheetLabel: fd.get('sheetLabel')
+        });
+      } else {
+        addFamily({
+          name: fd.get('name'),
+          children: parsedChildren,
+          sheetLabel: fd.get('sheetLabel')
+        });
+      }
       closeModal();
     });
-    document.getElementById('btn-fam-to-team')?.addEventListener('click', () => {
-      convertFamilyToTeam(f.id, document.getElementById('fam-to-team').value);
-      closeModal();
-    });
-    document.getElementById('btn-del-fam')?.addEventListener('click', () => {
-      deleteFamily(f.id);
-      closeModal();
-    });
+
+    if (f) {
+      document.getElementById('btn-fam-to-team')?.addEventListener('click', () => {
+        convertFamilyToTeam(f.id, document.getElementById('fam-to-team').value);
+        closeModal();
+      });
+      document.getElementById('btn-del-fam')?.addEventListener('click', () => {
+        deleteFamily(f.id);
+        closeModal();
+      });
+    }
   }
 
   // ─── Render ────────────────────────────────────────────────
@@ -876,9 +1157,10 @@
     const color = isIn ? 'text-neon' : 'text-rose';
     const sign = isIn ? '+' : '−';
     const title = isIn ? (m.from || 'Entrada') : (m.what || 'Gasto');
+    const chLabel = moveChildrenLabel(m);
     const sub = isIn
       ? (m.carryover ? 'Saldo del mes anterior' : (m.note || 'Ingreso'))
-      : `${moveGroupName(m)}${m.note ? ' · ' + m.note : ''}`;
+      : `${moveGroupName(m)}${chLabel ? ' · ' + chLabel : ''}${m.note ? ' · ' + m.note : ''}`;
     const dotColor = isIn ? null : groupMeta(moveGroupKey(m)).color;
     const dot = dotColor
       ? `<span class="inline-block w-2 h-2 rounded-full mr-1" style="background:${dotColor}"></span>`
@@ -1009,20 +1291,34 @@
       empty.classList.remove('hidden');
     } else {
       empty.classList.add('hidden');
-      ul.innerHTML = state.families.map((f) => `
-        <li class="rounded-xl bg-void/40 px-3 py-3 border border-white/5 flex items-center justify-between gap-2">
-          <button type="button" data-edit-fam="${f.id}" class="flex items-center gap-2 min-w-0 text-left flex-1">
-            <span class="w-3 h-3 rounded-full shrink-0" style="background:${f.color}"></span>
-            <span class="min-w-0">
-              <span class="text-sm truncate block">${escapeHtml(f.name)}</span>
-              <span class="text-[10px] tabular-nums block ${(f.sipis || []).length ? 'text-white/40' : 'text-amber-300/70'}">
-                ${(f.sipis || []).length ? 'SIPI ' + escapeHtml(f.sipis.join(' · ')) : 'sin SIPI'}
+      ul.innerHTML = state.families.map((f) => {
+        const ch = ensureFamilyChildren(f);
+        let sipiText = '';
+        if (!ch.length) {
+          sipiText = '<span class="text-amber-300/70">sin SIPI</span>';
+        } else {
+          const formatted = ch.map((c) => {
+            if (c.name && c.sipi) return `${escapeHtml(c.name)} (${escapeHtml(c.sipi)})`;
+            if (c.name) return escapeHtml(c.name);
+            return escapeHtml(c.sipi);
+          }).join(' · ');
+          sipiText = `<span class="text-white/40">SIPI ${formatted}</span>`;
+        }
+        return `
+          <li class="rounded-xl bg-void/40 px-3 py-3 border border-white/5 flex items-center justify-between gap-2">
+            <button type="button" data-edit-fam="${f.id}" class="flex items-center gap-2 min-w-0 text-left flex-1">
+              <span class="w-3 h-3 rounded-full shrink-0" style="background:${f.color}"></span>
+              <span class="min-w-0">
+                <span class="text-sm truncate block">${escapeHtml(f.name)}</span>
+                <span class="text-[10px] tabular-nums block">
+                  ${sipiText}
+                </span>
               </span>
-            </span>
-          </button>
-          <i data-lucide="pencil" class="w-3.5 h-3.5 text-violet-light/60 shrink-0 pointer-events-none"></i>
-        </li>
-      `).join('');
+            </button>
+            <i data-lucide="pencil" class="w-3.5 h-3.5 text-violet-light/60 shrink-0 pointer-events-none"></i>
+          </li>
+        `;
+      }).join('');
     }
 
     const t = monthTotals();
@@ -1119,31 +1415,78 @@
 
   function cajaData() {
     const concept = incomeConcept(viewYear, viewMonth);
+    const rows = [];
+    for (const m of sheetMovements()) {
+      if (m.type === 'income') {
+        rows.push({
+          date: m.date,
+          concept,
+          sipi: '',
+          income: Number(m.amount),
+          expense: ''
+        });
+      } else {
+        const sipis = expenseSipis(m);
+        const label = expenseSheetLabel(m);
+        if (sipis.length <= 1) {
+          rows.push({
+            date: m.date,
+            concept: label,
+            sipi: sipis[0] || '',
+            income: '',
+            expense: Number(m.amount)
+          });
+        } else {
+          sipis.forEach((s, idx) => {
+            const isFirst = idx === 0;
+            const isLast = idx === sipis.length - 1;
+            rows.push({
+              date: isFirst ? m.date : '',
+              concept: isFirst ? label : '',
+              sipi: s,
+              income: '',
+              expense: isLast ? Number(m.amount) : ''
+            });
+          });
+        }
+      }
+    }
     return {
       monthLabel: monthLabel(viewYear, viewMonth),
       technician: state.config.technician || state.config.name || '',
-      rows: sheetMovements().map((m) => ({
-        date: m.date,
-        concept: m.type === 'income' ? concept : expenseSheetLabel(m),
-        sipi: m.type === 'income' ? '' : expenseSipi(m),
-        income: m.type === 'income' ? Number(m.amount) : '',
-        expense: m.type === 'expense' ? Number(m.amount) : ''
-      }))
+      rows
     };
   }
 
   function sircData() {
+    const rows = [];
+    for (const m of sheetMovements().filter((x) => x.type === 'expense')) {
+      const sipis = expenseSipis(m);
+      const fam = expenseSheetLabel(m);
+      if (sipis.length <= 1) {
+        rows.push({
+          date: m.date,
+          family: fam,
+          sipi: sipis[0] || '',
+          amount: Number(m.amount)
+        });
+      } else {
+        sipis.forEach((s, idx) => {
+          const isFirst = idx === 0;
+          const isLast = idx === sipis.length - 1;
+          rows.push({
+            date: isFirst ? m.date : '',
+            family: isFirst ? fam : '',
+            sipi: s,
+            amount: isLast ? Number(m.amount) : ''
+          });
+        });
+      }
+    }
     return {
       monthLabel: monthLabel(viewYear, viewMonth),
       technician: state.config.technician || state.config.name || '',
-      rows: sheetMovements()
-        .filter((m) => m.type === 'expense')
-        .map((m) => ({
-          date: m.date,
-          family: expenseSheetLabel(m),
-          sipi: expenseSipi(m),
-          amount: Number(m.amount)
-        }))
+      rows
     };
   }
 
@@ -1205,7 +1548,9 @@
     const rows = d.rows.map((r) => {
       saldo += (Number(r.income) || 0) - (Number(r.expense) || 0);
       return [
-        formatDateNum(r.date), r.concept, r.sipi,
+        r.date ? formatDateNum(r.date) : '',
+        r.concept || '',
+        r.sipi ? String(r.sipi) : '',
         r.income ? money(r.income) : '',
         r.expense ? money(r.expense) : '',
         money(saldo)
@@ -1230,7 +1575,12 @@
     let total = 0;
     const rows = d.rows.map((r) => {
       total += Number(r.amount) || 0;
-      return [formatDateNum(r.date), r.family, r.sipi, money(r.amount)];
+      return [
+        r.date ? formatDateNum(r.date) : '',
+        r.family || '',
+        r.sipi ? String(r.sipi) : '',
+        r.amount ? money(r.amount) : ''
+      ];
     });
     audit('print_sheet', 'Generó el PDF del SIRC de ' + d.monthLabel);
     const blob = window.FLPdf.build({
@@ -1289,29 +1639,6 @@
    * NO reemplaza nada: solo completa el SIPI y el rótulo de las familias que hoy
    * están vacías. No mira los movimientos ni crea o borra familias.
    */
-  function importSipiFile(file) {
-    // El selector muestra todo (WhatsApp entrega los .json con tipo genérico),
-    // así que acá se ataja el manotazo a un video.
-    if (file.size > 5 * 1024 * 1024) {
-      toast('Ese archivo es muy grande, no parece el de los SIPI');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const data = JSON.parse(reader.result);
-        const table = Array.isArray(data) ? data : (data.familias || data.families || []);
-        if (!Array.isArray(table) || !table.length) {
-          toast('El archivo no tiene familias');
-          return;
-        }
-        openSipiSuggestionModal(table);
-      } catch {
-        toast('Archivo inválido');
-      }
-    };
-    reader.readAsText(file);
-  }
 
   function resetAll() {
     if (!confirm('¿Borrar TODO? Exportá backup antes.')) return;
@@ -1383,12 +1710,6 @@
       toast('Config guardada');
     });
 
-    document.getElementById('input-sipi').addEventListener('change', (e) => {
-      const f = e.target.files?.[0];
-      if (f) importSipiFile(f);
-      e.target.value = '';
-    });
-
     document.getElementById('btn-sheet-caja').addEventListener('click', exportCaja);
     document.getElementById('btn-sheet-sirc').addEventListener('click', exportSirc);
     document.getElementById('btn-sheet-pdf').addEventListener('click', printCaja);
@@ -1457,44 +1778,32 @@
    * las familias que este celular tenga cargadas. Nunca los escribe sin confirmar:
    * un SIPI equivocado se va derecho a una rendición.
    */
-  function openSipiSuggestionModal(table) {
-    const matches = pendingSipiMatches(table);
+  /**
+   * Al abrir por primera vez, ofrece pasar a rubro de equipo las familias que en
+   * realidad lo son (una llamada "Equipo", o una cuyos gastos son todos del mismo
+   * rubro). Se muestra una sola vez.
+   */
+  function openSipiSuggestionModal() {
     const teams = pendingTeamMatches();
-    if (!matches.length && !teams.length) {
+    if (!teams.length) {
       state.seenSipiSuggestion = true;
       save();
-      if (table) toast('No hay nada nuevo para cargar');
       return;
     }
-
-    const sipiRows = matches.map((mt, i) => `
-      <li class="flex items-center gap-3 py-2.5 border-b border-white/5">
-        <input type="checkbox" class="sipi-chk w-4 h-4 accent-violet-light shrink-0" data-i="${i}" checked />
-        <span class="flex-1 min-w-0">
-          <span class="text-sm block truncate">${escapeHtml(mt.familyName)}</span>
-          <span class="text-[11px] text-white/40 tabular-nums block">SIPI ${escapeHtml(mt.sipis.join(' · '))}</span>
-          ${mt.label ? `<span class="text-[11px] text-white/30 block truncate">en la planilla: ${escapeHtml(mt.label.trim())}</span>` : ''}
-        </span>
-      </li>
-    `).join('');
 
     const teamRows = teams.map((tm, i) => `
       <li class="flex items-center gap-3 py-2.5 border-b border-white/5">
         <input type="checkbox" class="team-chk w-4 h-4 accent-violet-light shrink-0" data-i="${i}" checked />
         <span class="flex-1 min-w-0">
           <span class="text-sm block truncate">${escapeHtml(tm.familyName)}</span>
-          <span class="text-[11px] text-white/40 block truncate">pasa a rubro de equipo · sin SIPI</span>
+          <span class="text-[11px] text-white/40 block truncate">pasa a ${escapeHtml(tm.categoryLabel)} · sin SIPI</span>
         </span>
       </li>
     `).join('');
 
     openModal('Ajustes de tus familias', `
-      ${matches.length ? `
-        <p class="text-xs text-white/50 mb-2">Estos SIPI vienen del archivo. Solo se cargan en las familias que hoy no tienen ninguno; lo que ya cargaste no se toca.</p>
-        <ul class="mb-4">${sipiRows}</ul>` : ''}
-      ${teams.length ? `
-        <p class="text-xs text-white/50 mb-2">Esto no parece una familia sino un gasto del equipo. Los movimientos se conservan.</p>
-        <ul class="mb-4">${teamRows}</ul>` : ''}
+      <p class="text-xs text-white/50 mb-2">Esto no parece una familia sino un gasto del equipo. Los movimientos se conservan.</p>
+      <ul class="mb-4">${teamRows}</ul>
       <button type="button" id="btn-sipi-apply" class="w-full py-3 rounded-2xl bg-gradient-to-r from-violet to-violet-soft font-semibold text-sm">Aplicar</button>
       <button type="button" id="btn-sipi-skip" class="w-full py-3 mt-2 rounded-2xl border border-violet/30 text-violet-light text-sm">Ahora no</button>
     `);
@@ -1505,28 +1814,15 @@
       closeModal();
     };
     document.getElementById('btn-sipi-apply').addEventListener('click', () => {
-      let n = 0;
-      document.querySelectorAll('.sipi-chk').forEach((chk) => {
-        if (!chk.checked) return;
-        const mt = matches[Number(chk.dataset.i)];
-        const f = familyById(mt.familyId);
-        if (!f || (f.sipis || []).length) return;
-        f.sipis = [...mt.sipis];
-        if (mt.label && !f.sheetLabel) f.sheetLabel = mt.label;
-        audit('add_sipi', `SIPI ${mt.sipis.join(' · ')} → ${f.name}`, { id: f.id });
-        n++;
-      });
-      // Las conversiones van al final: sacan familias de la lista y correrían los índices.
       const chosen = [...document.querySelectorAll('.team-chk')]
         .filter((chk) => chk.checked)
         .map((chk) => teams[Number(chk.dataset.i)]);
       for (const tm of chosen) {
         convertFamilyToTeam(tm.familyId, tm.categoryId, { skipConfirm: true });
-        n++;
       }
       finish();
       render();
-      toast(n ? 'Listo, quedó ajustado' : 'No se cambió nada');
+      toast(chosen.length ? 'Listo, quedó ajustado' : 'No se cambió nada');
     });
     document.getElementById('btn-sipi-skip').addEventListener('click', finish);
   }
