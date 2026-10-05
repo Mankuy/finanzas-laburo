@@ -1537,7 +1537,10 @@
 
   function sircData() {
     const rows = [];
-    for (const m of sheetMovements().filter((x) => x.type === 'expense')) {
+    // El SIRC rinde gasto por Familia, con su SIPI. Los rubros de Equipo
+    // (nafta, locomoción, papelería) NO van en esta planilla: van solo en la
+    // caja. Por eso se filtran acá y no al guardar: los datos no se tocan.
+    for (const m of sheetMovements().filter((x) => x.type === 'expense' && !x.teamCategoryId)) {
       const sipis = expenseSipis(m);
       const fam = expenseSheetLabel(m);
       if (sipis.length <= 1) {
