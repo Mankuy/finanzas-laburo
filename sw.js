@@ -1,5 +1,5 @@
 /* Finanzas Laburo — offline-first cache-first */
-const CACHE = 'finanzas-laburo-v13';
+const CACHE = 'finanzas-laburo-v14';
 const ASSETS = [
   './',
   './index.html',
@@ -9,12 +9,13 @@ const ASSETS = [
   './manifest.json',
   './icons/icon-192.svg',
   './icons/icon-512.svg',
-  './icons/icon-maskable-512.svg'
+  './icons/icon-maskable-512.svg',
+  // Tailwind y Lucide van dentro del repo: desde el CDN, Tailwind nunca quedaba
+  // guardado (no manda CORS) y sin señal la app se veía sin estilos.
+  './vendor/tailwind.js',
+  './vendor/lucide.min.js'
 ];
-const CDN = [
-  'https://cdn.tailwindcss.com',
-  'https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js'
-];
+const CDN = [];
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
