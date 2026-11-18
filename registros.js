@@ -52,6 +52,7 @@ window.FLRegistros = (function () {
     return {
       version: REG_VERSION,
       registros: [],
+      recordatorios: [],
       exports: {},
       pendiente: {},
       ultimaFamiliaId: null,
@@ -126,6 +127,13 @@ window.FLRegistros = (function () {
     );
   }
 
+  function tomorrowISO() {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 10);
+  }
+
   // ─── Persistencia ──────────────────────────────────────────
   function loadReg() {
     let raw = null;
@@ -150,14 +158,23 @@ window.FLRegistros = (function () {
         throw new Error('Formato inválido');
       }
       regCorrupt = false;
+      const rawRecs = Array.isArray(p.recordatorios) ? p.recordatorios : [];
+      const cutoff = Date.now() - 60 * 86400000;
+      const cleanRecs = rawRecs.filter((r) => {
+        if (!r || !r.hecho) return Boolean(r);
+        const ts = Date.parse(r.updatedAt);
+        return !Number.isFinite(ts) || ts >= cutoff;
+      });
       regState = {
         version: REG_VERSION,
         registros: Array.isArray(p.registros) ? p.registros : [],
+        recordatorios: cleanRecs,
         exports: p.exports && typeof p.exports === 'object' && !Array.isArray(p.exports) ? p.exports : {},
         pendiente: p.pendiente && typeof p.pendiente === 'object' && !Array.isArray(p.pendiente) ? p.pendiente : {},
         ultimaFamiliaId: typeof p.ultimaFamiliaId === 'string' ? p.ultimaFamiliaId : null,
         borrador: p.borrador && typeof p.borrador === 'object' && !Array.isArray(p.borrador) ? p.borrador : null
       };
+      if (cleanRecs.length !== rawRecs.length) saveReg();
       return true;
     } catch {
       // No se pisa la clave para no destruir datos que el usuario pueda recuperar.
@@ -361,6 +378,154 @@ window.FLRegistros = (function () {
     render();
     api.toast('Borrado');
     return true;
+  }
+
+  // ─── Recordatorios ─────────────────────────────────────────
+  function upsertRecordatorio(data, existingId = null) {
+    if (regCorrupt) {
+      api.toast('No se pudieron leer los registros');
+      return false;
+    }
+    const fam = data && data.familyId ? api.familyById(data.familyId) : null;
+    if (!fam || fam.id === 'fam-misc') {
+      api.toast('Elegí una familia');
+      return false;
+    }
+    const fecha = String(data.fecha || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+      api.toast('Falta la fecha');
+      return false;
+    }
+    const texto = String(data.texto || '').trim().slice(0, 500);
+    if (!texto) {
+      api.toast('Escribí algo');
+      return false;
+    }
+
+    const snapshot = JSON.stringify(regState);
+    const now = new Date().toISOString();
+
+    if (existingId) {
+      const idx = regState.recordatorios.findIndex((r) => r.id === existingId);
+      if (idx === -1) return false;
+      const prev = regState.recordatorios[idx];
+      regState.recordatorios[idx] = {
+        id: prev.id,
+        familyId: fam.id,
+        fecha,
+        texto,
+        hecho: Boolean(prev.hecho),
+        createdAt: prev.createdAt || now,
+        updatedAt: now
+      };
+    } else {
+      regState.recordatorios.push({
+        id: api.uid(),
+        familyId: fam.id,
+        fecha,
+        texto,
+        hecho: false,
+        createdAt: now,
+        updatedAt: now
+      });
+    }
+
+    regState.ultimaFamiliaId = fam.id;
+
+    if (!saveReg()) {
+      regState = JSON.parse(snapshot);
+      return false;
+    }
+
+    render();
+    api.toast(existingId ? 'Recordatorio actualizado' : 'Recordatorio guardado');
+    return true;
+  }
+
+  function deleteRecordatorio(id) {
+    if (regCorrupt) {
+      api.toast('No se pudieron leer los registros');
+      return false;
+    }
+    const rec = regState.recordatorios.find((r) => r.id === id);
+    if (!rec) return false;
+    if (!confirm('¿Borrar este recordatorio?')) return false;
+
+    const snapshot = JSON.stringify(regState);
+    regState.recordatorios = regState.recordatorios.filter((r) => r.id !== id);
+    if (!saveReg()) {
+      regState = JSON.parse(snapshot);
+      return false;
+    }
+
+    render();
+    api.toast('Borrado');
+    return true;
+  }
+
+  function marcarRecordatorioHecho(id) {
+    if (regCorrupt) {
+      api.toast('No se pudieron leer los registros');
+      return;
+    }
+    const rec = regState.recordatorios.find((r) => r.id === id);
+    if (!rec) return;
+
+    const snapshot = JSON.stringify(regState);
+    rec.hecho = true;
+    rec.updatedAt = new Date().toISOString();
+
+    if (!saveReg()) {
+      regState = JSON.parse(snapshot);
+      return;
+    }
+
+    render();
+    if (confirm('¿Querés anotar lo que pasó como registro?')) {
+      openRegistroModal(null, { familyId: rec.familyId, texto: rec.texto });
+    }
+  }
+
+  function buildRecordatorioIcs(fecha, id) {
+    const [y, m, d] = String(fecha).split('-').map(Number);
+    const ymd = `${y}${pad2(m)}${pad2(d)}`;
+    const next = new Date(y, m - 1, d + 1);
+    const ymdNext = `${next.getFullYear()}${pad2(next.getMonth() + 1)}${pad2(next.getDate())}`;
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+    const summary = 'Recordatorio ETAF — ver Fichas';
+    const text = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Finanzas Laburo//Fichas//ES',
+      'BEGIN:VEVENT',
+      `UID:${id}@finanzas-laburo`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART;VALUE=DATE:${ymd}`,
+      `DTEND;VALUE=DATE:${ymdNext}`,
+      `SUMMARY:${summary}`,
+      'BEGIN:VALARM',
+      'ACTION:DISPLAY',
+      `DESCRIPTION:${summary}`,
+      'TRIGGER:PT9H',
+      'END:VALARM',
+      'END:VEVENT',
+      'END:VCALENDAR',
+      ''
+    ].join('\r\n');
+    return {
+      filename: `recordatorio-etaf_${fecha}.ics`,
+      text
+    };
+  }
+
+  function compartirRecordatorioIcs(fecha, id) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(fecha || ''))) {
+      api.toast('Falta la fecha');
+      return;
+    }
+    const { filename, text } = buildRecordatorioIcs(fecha, id);
+    const file = new File([text], filename, { type: 'text/calendar' });
+    compartirArchivos([file]);
   }
 
   // ─── Consultas y Cierre ────────────────────────────────────
@@ -830,7 +995,104 @@ window.FLRegistros = (function () {
     if (textoArea) textoArea.value = values.texto || '';
   }
 
-  function openRegistroModal(reg = null) {
+  function openRecordatorioModal(rec = null) {
+    if (regCorrupt) {
+      api.toast('No se pudieron leer los registros');
+      return;
+    }
+
+    const familias = activeFamilies();
+    if (!rec && !familias.length) {
+      api.openModal('Nuevo recordatorio', `
+        <div class="space-y-4 py-2">
+          <p class="text-sm text-white/70">Primero cargá una familia.</p>
+          <button type="button" id="btn-rec-ir-familias"
+            class="w-full py-3 rounded-2xl bg-gradient-to-r from-violet to-violet-soft font-semibold text-sm">
+            Ir a Familias
+          </button>
+        </div>
+      `);
+      document.getElementById('btn-rec-ir-familias')?.addEventListener('click', () => {
+        api.closeModal();
+        api.switchTab('families');
+      });
+      return;
+    }
+
+    const isEdit = Boolean(rec);
+    const initFamilyId = isEdit ? rec.familyId : defaultFamilyForNew(familias);
+    const initFecha = isEdit ? rec.fecha : tomorrowISO();
+    const initTexto = isEdit ? (rec.texto || '') : '';
+
+    let extraOption = '';
+    if (isEdit && !familias.some((f) => f.id === rec.familyId)) {
+      const existing = api.familyById(rec.familyId);
+      if (existing && existing.id !== 'fam-misc') {
+        extraOption = `<option value="${api.escapeAttr(existing.id)}" selected>${api.escapeHtml(existing.name)}</option>`;
+      } else {
+        extraOption = `<option value="" selected>${api.escapeHtml(familyDisplayName(rec.familyId))}</option>`;
+      }
+    }
+
+    const familyOptionsHtml = extraOption + familias.map((f) =>
+      `<option value="${api.escapeAttr(f.id)}" ${f.id === initFamilyId ? 'selected' : ''}>${api.escapeHtml(f.name)}</option>`
+    ).join('');
+
+    api.openModal(isEdit ? 'Editar recordatorio' : 'Nuevo recordatorio', `
+      <form id="rec-form" class="space-y-4" data-id="${isEdit ? api.escapeAttr(rec.id) : ''}">
+        <div>
+          <label class="block text-xs text-white/50 mb-1">Familia</label>
+          <select name="familyId"
+            class="w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-violet-light">
+            ${familyOptionsHtml}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-white/50 mb-1">Para cuándo</label>
+          <input name="fecha" type="date" required value="${api.escapeAttr(initFecha)}"
+            class="w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-violet-light" />
+        </div>
+        <div>
+          <label class="block text-xs text-white/50 mb-1">Qué hay que hacer</label>
+          <textarea name="texto" rows="3" maxlength="500" placeholder="Ej. llamar a la escuela, pedir constancia…"
+            class="select-text w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-violet-light">${api.escapeHtml(initTexto)}</textarea>
+        </div>
+        <button type="submit" class="w-full py-3 rounded-2xl bg-gradient-to-r from-violet to-violet-soft font-semibold text-sm">
+          ${isEdit ? 'Guardar cambios' : 'Guardar'}
+        </button>
+        ${isEdit ? `
+          <button type="button" id="btn-rec-ics" class="w-full py-3 rounded-2xl border border-violet/40 text-violet-light text-sm">📅 Al calendario</button>
+          <button type="button" id="btn-del-rec" class="w-full py-3 rounded-2xl border border-red-500/40 text-red-400 text-sm">Eliminar</button>
+        ` : ''}
+      </form>
+    `);
+
+    const form = document.getElementById('rec-form');
+    if (!form) return;
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const ok = upsertRecordatorio({
+        familyId: fd.get('familyId'),
+        fecha: fd.get('fecha'),
+        texto: fd.get('texto')
+      }, isEdit ? rec.id : null);
+      if (ok) api.closeModal();
+    });
+
+    if (isEdit) {
+      document.getElementById('btn-rec-ics')?.addEventListener('click', () => {
+        const fechaVal = form.querySelector('input[name="fecha"]')?.value || rec.fecha;
+        compartirRecordatorioIcs(fechaVal, rec.id);
+      });
+      document.getElementById('btn-del-rec')?.addEventListener('click', () => {
+        if (deleteRecordatorio(rec.id)) api.closeModal();
+      });
+    }
+  }
+
+  function openRegistroModal(reg = null, preset = null) {
     if (regCorrupt) {
       api.toast('No se pudieron leer los registros');
       return;
@@ -855,12 +1117,17 @@ window.FLRegistros = (function () {
     }
 
     const isEdit = Boolean(reg);
-    const hasDraft = !isEdit && Boolean(regState.borrador);
+    const hasPreset = !isEdit && Boolean(preset);
+    const hasDraft = !isEdit && !hasPreset && Boolean(regState.borrador);
     const draft = hasDraft ? regState.borrador : null;
 
     let initFamilyId = '';
     if (isEdit) {
       initFamilyId = reg.familyId;
+    } else if (hasPreset) {
+      initFamilyId = preset.familyId && familias.some((f) => f.id === preset.familyId)
+        ? preset.familyId
+        : defaultFamilyForNew(familias);
     } else if (draft && familias.some((f) => f.id === draft.familyId)) {
       initFamilyId = draft.familyId;
     } else {
@@ -873,7 +1140,7 @@ window.FLRegistros = (function () {
       ? Boolean(isEdit ? reg.noConcretada : (draft && draft.noConcretada))
       : false;
     const initLineas = normalizeLineas(isEdit ? reg.lineas : (draft && draft.lineas));
-    const initTexto = isEdit ? (reg.texto || '') : ((draft && draft.texto) || '');
+    const initTexto = isEdit ? (reg.texto || '') : (hasPreset ? String(preset.texto || '') : ((draft && draft.texto) || ''));
 
     let extraOption = '';
     if (isEdit && !familias.some((f) => f.id === reg.familyId)) {
@@ -1026,18 +1293,41 @@ window.FLRegistros = (function () {
 
     const avisoEl = document.getElementById('reg-aviso');
     const chipsEl = document.getElementById('reg-family-chips');
+    const recHeaderEl = document.getElementById('reg-rec-header');
+    const recListEl = document.getElementById('reg-rec-list');
+    const recEmptyBtnEl = document.getElementById('btn-add-rec-empty');
     const listEl = document.getElementById('reg-list');
     const emptyEl = document.getElementById('reg-empty');
     const cierreListEl = document.getElementById('reg-cierre-lista');
     const resumenEl = document.getElementById('reg-datos-resumen');
+    const navDotEl = document.querySelector('.nav-item[data-tab="reg"] .nav-dot');
+
+    const updateNavDot = (on) => {
+      if (!navDotEl) return;
+      if (on) {
+        navDotEl.style.opacity = '1';
+        navDotEl.style.transform = 'scale(1)';
+        navDotEl.classList.add('bg-amber-400');
+        navDotEl.classList.remove('bg-violet-light');
+      } else {
+        navDotEl.style.opacity = '';
+        navDotEl.style.transform = '';
+        navDotEl.classList.remove('bg-amber-400');
+        navDotEl.classList.add('bg-violet-light');
+      }
+    };
 
     if (regCorrupt) {
       if (avisoEl) { avisoEl.classList.add('hidden'); avisoEl.textContent = ''; }
       if (chipsEl) chipsEl.innerHTML = '';
+      if (recHeaderEl) recHeaderEl.classList.add('hidden');
+      if (recListEl) recListEl.innerHTML = '';
+      if (recEmptyBtnEl) recEmptyBtnEl.classList.add('hidden');
       if (listEl) listEl.innerHTML = '';
       if (emptyEl) emptyEl.classList.remove('hidden');
       if (cierreListEl) cierreListEl.innerHTML = '';
       if (resumenEl) resumenEl.textContent = 'No se pudieron leer los registros';
+      updateNavDot(false);
       if (window.lucide) window.lucide.createIcons();
       return;
     }
@@ -1067,6 +1357,56 @@ window.FLRegistros = (function () {
         const isAct = c.id === activeFilter;
         return `<button type="button" data-reg-family="${api.escapeAttr(c.id)}" class="chip shrink-0 px-3 py-1.5 rounded-full text-xs${isAct ? ' active' : ''}">${api.escapeHtml(c.name)}</button>`;
       }).join('');
+    }
+
+    // Caja «Para hacer» (recordatorios pendientes) y punto en barra inferior
+    const hoy = api.todayISO();
+    const hayVencidos = regState.recordatorios.some((r) => r && !r.hecho && r.fecha && r.fecha <= hoy);
+    updateNavDot(hayVencidos);
+
+    const recsPendientes = regState.recordatorios
+      .filter((r) => r && !r.hecho && (activeFilter === 'all' || r.familyId === activeFilter))
+      .slice()
+      .sort((a, b) => ((a.fecha || '') + (a.createdAt || '')).localeCompare((b.fecha || '') + (b.createdAt || '')));
+
+    if (recHeaderEl && recListEl && recEmptyBtnEl) {
+      if (!recsPendientes.length) {
+        recHeaderEl.classList.add('hidden');
+        recListEl.classList.add('hidden');
+        recListEl.innerHTML = '';
+        recEmptyBtnEl.classList.remove('hidden');
+      } else {
+        recHeaderEl.classList.remove('hidden');
+        recListEl.classList.remove('hidden');
+        recEmptyBtnEl.classList.add('hidden');
+        recListEl.innerHTML = recsPendientes.map((r) => {
+          const f = String(r.fecha || '');
+          const ddmm = f.length >= 10 ? f.slice(8, 10) + '/' + f.slice(5, 7) : f;
+          const famName = familyDisplayName(r.familyId);
+          const isDue = Boolean(f && f <= hoy);
+          const dueLabel = f === hoy ? 'vence hoy' : 'venció';
+          const badgeHtml = isDue
+            ? `<span class="text-amber-200 font-medium">· ${dueLabel}</span>`
+            : '';
+          return `
+            <li class="rounded-xl px-3 py-2.5 border flex items-center justify-between gap-2 ${isDue ? 'bg-amber-500/15 border-amber-400/40' : 'bg-void/40 border-white/5'}">
+              <button type="button" data-edit-rec="${api.escapeAttr(r.id)}" class="flex-1 min-w-0 text-left space-y-0.5">
+                <div class="flex items-center gap-1.5 text-[11px] flex-wrap">
+                  <span class="tabular-nums font-medium ${isDue ? 'text-amber-200' : 'text-violet-light'}">${api.escapeHtml(ddmm)}</span>
+                  <span class="text-white/40">·</span>
+                  <span class="text-white/90 font-medium truncate">${api.escapeHtml(famName)}</span>
+                  ${badgeHtml}
+                </div>
+                <p class="text-xs text-white/75 break-words">${api.escapeHtml(r.texto || '')}</p>
+              </button>
+              <button type="button" data-done-rec="${api.escapeAttr(r.id)}"
+                class="shrink-0 px-2.5 py-1.5 rounded-xl border border-violet/40 text-[11px] font-medium text-violet-light hover:bg-violet/15">
+                Hecho
+              </button>
+            </li>
+          `;
+        }).join('');
+      }
     }
 
     // Lista de registros agrupada por día (más reciente primero)
@@ -1174,6 +1514,8 @@ window.FLRegistros = (function () {
 
     document.getElementById('btn-add-reg-home')?.addEventListener('click', () => openRegistroModal());
     document.getElementById('btn-add-reg')?.addEventListener('click', () => openRegistroModal());
+    document.getElementById('btn-add-rec')?.addEventListener('click', () => openRecordatorioModal());
+    document.getElementById('btn-add-rec-empty')?.addEventListener('click', () => openRecordatorioModal());
     document.getElementById('reg-prev-month')?.addEventListener('click', () => api.shiftViewMonth(-1));
     document.getElementById('reg-next-month')?.addEventListener('click', () => api.shiftViewMonth(1));
 
@@ -1209,6 +1551,19 @@ window.FLRegistros = (function () {
       if (editBtn) {
         const reg = regState.registros.find((r) => r.id === editBtn.dataset.editReg);
         if (reg) openRegistroModal(reg);
+        return;
+      }
+
+      const editRecBtn = e.target.closest('[data-edit-rec]');
+      if (editRecBtn) {
+        const rec = regState.recordatorios.find((r) => r.id === editRecBtn.dataset.editRec);
+        if (rec) openRecordatorioModal(rec);
+        return;
+      }
+
+      const doneRecBtn = e.target.closest('[data-done-rec]');
+      if (doneRecBtn) {
+        marcarRecordatorioHecho(doneRecBtn.dataset.doneRec);
         return;
       }
 

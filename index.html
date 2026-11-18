@@ -280,6 +280,20 @@
 
         <div id="reg-family-chips" class="flex gap-2 overflow-x-auto pb-1"></div>
 
+        <div id="reg-rec-box" class="glass rounded-2xl p-4 space-y-2.5">
+          <div id="reg-rec-header" class="flex items-center justify-between">
+            <h2 class="text-sm font-medium text-white/80">Para hacer</h2>
+            <button type="button" id="btn-add-rec" class="text-xs text-violet-light flex items-center gap-1 font-medium">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i> Recordatorio
+            </button>
+          </div>
+          <ul id="reg-rec-list" class="space-y-2"></ul>
+          <button type="button" id="btn-add-rec-empty"
+            class="hidden w-full py-2.5 rounded-xl border border-violet/35 text-xs font-medium text-violet-light flex items-center justify-center gap-1.5">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i> Recordatorio
+          </button>
+        </div>
+
         <ul id="reg-list" class="space-y-3"></ul>
         <p id="reg-empty" class="text-xs text-white/40 text-center py-6">Sin registros este mes.</p>
 
