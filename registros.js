@@ -172,18 +172,35 @@ window.FLRegistros = (function () {
         const ts = Date.parse(r.updatedAt);
         return !Number.isFinite(ts) || ts >= cutoff;
       });
+      const fichaBaseRaw = p.fichaBase && typeof p.fichaBase === 'object' && !Array.isArray(p.fichaBase) ? p.fichaBase : {};
+      let migratedAf = false;
+      for (const fb of Object.values(fichaBaseRaw)) {
+        if (fb && fb.contexto && typeof fb.contexto === 'object' && !Array.isArray(fb.contexto)) {
+          const cx = fb.contexto;
+          if (typeof cx.af === 'string' && cx.af.trim() && !String(cx.afModalidad || '').trim()) {
+            cx.afModalidad = cx.af;
+          }
+          if ('af' in cx) {
+            delete cx.af;
+            migratedAf = true;
+          }
+          cx.afModalidad = String(cx.afModalidad || '');
+          cx.afTitular = String(cx.afTitular || '');
+          cx.afConvenio = String(cx.afConvenio || '');
+        }
+      }
       regState = {
         version: REG_VERSION,
         registros: Array.isArray(p.registros) ? p.registros : [],
         recordatorios: cleanRecs,
-        fichaBase: p.fichaBase && typeof p.fichaBase === 'object' && !Array.isArray(p.fichaBase) ? p.fichaBase : {},
+        fichaBase: fichaBaseRaw,
         cierresMes: p.cierresMes && typeof p.cierresMes === 'object' && !Array.isArray(p.cierresMes) ? p.cierresMes : {},
         exports: p.exports && typeof p.exports === 'object' && !Array.isArray(p.exports) ? p.exports : {},
         pendiente: p.pendiente && typeof p.pendiente === 'object' && !Array.isArray(p.pendiente) ? p.pendiente : {},
         ultimaFamiliaId: typeof p.ultimaFamiliaId === 'string' ? p.ultimaFamiliaId : null,
         borrador: p.borrador && typeof p.borrador === 'object' && !Array.isArray(p.borrador) ? p.borrador : null
       };
-      if (cleanRecs.length !== rawRecs.length) saveReg();
+      if (cleanRecs.length !== rawRecs.length || migratedAf) saveReg();
       return true;
     } catch {
       // No se pisa la clave para no destruir datos que el usuario pueda recuperar.
@@ -1365,7 +1382,9 @@ window.FLRegistros = (function () {
         inicioContexto: '',
         inicioEtaf: '',
         acogimiento: '',
-        af: '',
+        afModalidad: '',
+        afTitular: '',
+        afConvenio: '',
         tenencia: '',
         instituciones: '',
         salientesDerivacion: ''
@@ -1505,7 +1524,12 @@ window.FLRegistros = (function () {
                   <option value="NO" ${c.acogimiento === 'NO' ? 'selected' : ''}>NO</option>
                 </select>
               </div>
-              ${fichaFieldHtml('x_af', 'En caso de tener AF (Modalidad / Titular / Convenio)', c.af, '', true)}
+              <div class="rounded-xl bg-void/30 p-2.5 border border-white/5 space-y-2">
+                <p class="text-[11px] font-medium text-white/70">En caso de tener AF</p>
+                ${fichaFieldHtml('x_afModalidad', 'Modalidad', c.afModalidad)}
+                ${fichaFieldHtml('x_afTitular', 'Titular / Proyecto', c.afTitular)}
+                ${fichaFieldHtml('x_afConvenio', 'Fecha de convenio', c.afConvenio)}
+              </div>
               ${fichaFieldHtml('x_tenencia', 'Tenencia (Si, No, En Trámite)', c.tenencia)}
               ${fichaFieldHtml('x_instituciones', 'Instituciones vinculadas al Núcleo Familiar', c.instituciones, '', true)}
               ${fichaFieldHtml('x_salientesDerivacion', 'Aspectos salientes al momento de la derivación', c.salientesDerivacion, '', true)}
@@ -1562,7 +1586,9 @@ window.FLRegistros = (function () {
         form.querySelector('[name="x_inicioContexto"]').value = pcx.inicioContexto || '';
         form.querySelector('[name="x_inicioEtaf"]').value = pcx.inicioEtaf || '';
         form.querySelector('[name="x_acogimiento"]').value = pcx.acogimiento || '';
-        form.querySelector('[name="x_af"]').value = pcx.af || '';
+        form.querySelector('[name="x_afModalidad"]').value = pcx.afModalidad || '';
+        form.querySelector('[name="x_afTitular"]').value = pcx.afTitular || '';
+        form.querySelector('[name="x_afConvenio"]').value = pcx.afConvenio || '';
         form.querySelector('[name="x_tenencia"]').value = pcx.tenencia || '';
         form.querySelector('[name="x_instituciones"]').value = pcx.instituciones || '';
         form.querySelector('[name="x_salientesDerivacion"]').value = pcx.salientesDerivacion || '';
@@ -1619,7 +1645,9 @@ window.FLRegistros = (function () {
           inicioContexto: readVal(form, 'x_inicioContexto'),
           inicioEtaf: readVal(form, 'x_inicioEtaf'),
           acogimiento,
-          af: readVal(form, 'x_af'),
+          afModalidad: readVal(form, 'x_afModalidad'),
+          afTitular: readVal(form, 'x_afTitular'),
+          afConvenio: readVal(form, 'x_afConvenio'),
           tenencia: readVal(form, 'x_tenencia'),
           instituciones: readVal(form, 'x_instituciones'),
           salientesDerivacion: readVal(form, 'x_salientesDerivacion')

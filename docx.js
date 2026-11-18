@@ -425,14 +425,20 @@ window.FLDocx = (function () {
       ['Fecha de inicio del Contexto', ctx.inicioContexto || ''],
       ['Fecha inicio intervención ETAF CAFF:', ctx.inicioEtaf || ''],
       ['Acogimiento Familiar:', acogText],
-      ['En caso de tener AF:', ctx.af || ''],
+      null,
       ['Tenencia (Si, No, En Trámite):', ctx.tenencia || ''],
       ['Instituciones vinculadas al Núcleo Familiar:', ctx.instituciones || ''],
       ['Aspectos salientes al momento de la derivación:', ctx.salientesDerivacion || '']
     ];
     for (let r = 0; r < t4Spec.length; r++) {
       const cell = directChildren(t4Rows[r], 'tc')[0];
-      fillLabel(doc, cell, t4Spec[r][0], t4Spec[r][1]);
+      if (r === 4) {
+        fillLabel(doc, cell, 'En caso de tener AF:', ctx.afModalidad || '');
+        fillLabel(doc, cell, 'Titular/ Proyecto:', ctx.afTitular || '');
+        fillLabel(doc, cell, 'Fecha Convenio:', ctx.afConvenio || '');
+      } else {
+        fillLabel(doc, cell, t4Spec[r][0], t4Spec[r][1]);
+      }
     }
 
     // T6: Período y Aspectos salientes del mes
@@ -599,6 +605,34 @@ window.FLDocx = (function () {
     for (let r = 0; r < t4Rotulos.length; r++) {
       const [rotulo, key] = t4Rotulos[r];
       const cell = directChildren(t4Rows[r], 'tc')[0];
+      if (r === 4) {
+        const afBuckets = { afModalidad: [], afTitular: [], afConvenio: [] };
+        let curAf = null;
+        for (const p of directChildren(cell, 'p')) {
+          for (const rawLine of pTextWithBr(p).split('\n')) {
+            const ts = rawLine.replace(/^\s+/, '');
+            if (ts.startsWith('En caso de tener AF:')) {
+              curAf = 'afModalidad';
+              let rest = ts.slice('En caso de tener AF:'.length).replace(/^\s+/, '');
+              if (rest.startsWith('Modalidad:')) rest = rest.slice('Modalidad:'.length);
+              afBuckets.afModalidad.push(rest);
+            } else if (ts.startsWith('Titular/ Proyecto:')) {
+              curAf = 'afTitular';
+              afBuckets.afTitular.push(ts.slice('Titular/ Proyecto:'.length));
+            } else if (ts.startsWith('Fecha Convenio:')) {
+              curAf = 'afConvenio';
+              afBuckets.afConvenio.push(ts.slice('Fecha Convenio:'.length));
+            } else if (curAf) {
+              afBuckets[curAf].push(rawLine);
+            }
+          }
+        }
+        contexto.afModalidad = cleanMultilineField(afBuckets.afModalidad);
+        contexto.afTitular = cleanMultilineField(afBuckets.afTitular);
+        contexto.afConvenio = cleanMultilineField(afBuckets.afConvenio);
+        continue;
+      }
+
       const rawLines = directChildren(cell, 'p')
         .map((p) => pTextWithBr(p))
         .join('\n')
