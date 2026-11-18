@@ -1784,6 +1784,7 @@ window.FLRegistros = (function () {
 
     const hasBase = Boolean(regState.fichaBase[familyId]);
     const canEditBase = Boolean(api.familyById(familyId)) && familyId !== 'fam-misc';
+    const esParcial = mes >= api.todayISO().slice(0, 7);
 
     const salientesPreview = salienteRegs.length
       ? `<p class="text-[11px] text-white/45 mt-1">Ya cargado en el mes: ${api.escapeHtml(salienteRegs.map((r) => `${shortDDMM(r.fecha)}: ${r.texto}`).join(' · '))}</p>`
@@ -1807,6 +1808,11 @@ window.FLRegistros = (function () {
 
     api.openModal(`Cierre del mes — ${famName}`, `
       <div class="space-y-4">
+        ${esParcial ? `
+          <div id="word-aviso-parcial" class="rounded-xl bg-amber-500/15 border border-amber-400/35 px-3 py-2.5 text-xs text-amber-200">
+            Ficha parcial: incluye lo cargado hasta hoy. La final sacala cuando termine el mes
+          </div>
+        ` : ''}
         ${!hasBase ? `
           <div class="rounded-xl bg-amber-500/15 border border-amber-400/35 px-3 py-2.5 text-xs text-amber-200 flex items-center justify-between gap-2">
             <span>Esta familia no tiene datos de la ficha cargados</span>
@@ -1900,7 +1906,9 @@ window.FLRegistros = (function () {
         const datos = buildDatosFichaWord(mes, familyId, cierre);
         const blob = await window.FLDocx.llenarFicha(plantillaBytes, datos);
         const safeFam = famName.replace(/[\\/:*?"<>|]/g, '-');
-        const filename = `Ficha Registro Etaf Caff - ${safeFam} (${MESES_CORTO[month]} ${String(year).slice(-2)}).docx`;
+        const hoy = api.todayISO();
+        const sufijoParcial = mes >= hoy.slice(0, 7) ? ` - parcial al ${hoy.slice(8, 10)}-${hoy.slice(5, 7)}` : '';
+        const filename = `Ficha Registro Etaf Caff - ${safeFam} (${MESES_CORTO[month]} ${String(year).slice(-2)})${sufijoParcial}.docx`;
         const file = new File([blob], filename, {
           type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         });
