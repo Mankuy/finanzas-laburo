@@ -186,6 +186,13 @@
     return monthKey(viewYear, viewMonth) + '-01';
   }
 
+  function shiftViewMonth(delta) {
+    const d = new Date(viewYear, viewMonth + delta, 1);
+    viewYear = d.getFullYear();
+    viewMonth = d.getMonth();
+    render();
+  }
+
   function formatDate(iso) {
     if (!iso) return '—';
     const [y, m, day] = iso.split('-').map(Number);
@@ -1456,6 +1463,7 @@
     renderTeam();
     renderLog();
     renderConfig();
+    try { if (window.FLRegistros) window.FLRegistros.render(); } catch (e) { console.error('[Fichas]', e); }
     lucide.createIcons();
   }
 
@@ -1464,6 +1472,7 @@
     home: 'Inicio',
     moves: 'Movimientos',
     families: 'Familias',
+    reg: 'Registro de familias',
     team: 'Equipo',
     log: 'Log',
     config: 'Configuración'
@@ -1721,7 +1730,7 @@
    */
 
   function resetAll() {
-    if (!confirm('¿Borrar TODO? Exportá backup antes.')) return;
+    if (!confirm('¿Borrar TODO lo de finanzas? Exportá backup antes. (Los registros de familias no se borran acá: eso está en Fichas.)')) return;
     if (!confirm('Confirmá: se pierden ingresos, gastos y familias.')) return;
     state = DEFAULT_STATE();
     save();
@@ -1940,7 +1949,22 @@
     return n > 0;
   }
 
+  function regApi() {
+    return {
+      getState: () => state,                       // getter: `state` se reasigna al importar o resetear
+      getView: () => ({ year: viewYear, month: viewMonth }),
+      setView: (year, month) => { viewYear = year; viewMonth = month; render(); },
+      autor: () => state.config.technician || state.config.name || '',
+      shiftViewMonth, switchTab,
+      familyById, expenseSipis,
+      uid, toast, openModal, closeModal,
+      escapeHtml, escapeAttr, money,
+      monthKey, monthLabel, todayISO, defaultDateForView, formatDate, formatDateNum
+    };
+  }
+
   function boot() {
+    try { if (window.FLRegistros) window.FLRegistros.init(regApi()); } catch (e) { console.error('[Fichas]', e); }
     bindEvents();
     applyDateFixes();
     render();

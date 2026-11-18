@@ -138,6 +138,11 @@
             − Gasto
           </button>
         </div>
+        <button type="button" id="btn-add-reg-home"
+          class="w-full py-3 rounded-2xl border border-violet/40 text-sm font-medium text-violet-light flex items-center justify-center gap-2 active:scale-[0.98] transition-transform">
+          <i data-lucide="notebook-pen" class="w-4 h-4"></i>
+          + Registro de familia
+        </button>
 
         <div class="glass rounded-2xl p-4">
           <div class="flex items-center justify-between mb-3">
@@ -248,6 +253,57 @@
         </div>
       </section>
 
+      <!-- FICHAS -->
+      <section id="tab-reg" class="tab-panel space-y-4 pt-2">
+        <button type="button" id="reg-aviso"
+          class="hidden w-full text-left rounded-2xl px-4 py-3 text-xs bg-amber-500/15 border border-amber-400/40 text-amber-200 leading-snug"></button>
+
+        <div class="glass rounded-2xl p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <button type="button" id="reg-prev-month" class="p-2 rounded-xl hover:bg-white/5 text-violet-light" aria-label="Mes anterior">
+              <i data-lucide="chevron-left" class="w-5 h-5"></i>
+            </button>
+            <div class="text-center">
+              <p class="text-xs text-white/50">Mes en vista</p>
+              <p id="reg-month-label" class="text-base font-semibold text-violet-light">—</p>
+            </div>
+            <button type="button" id="reg-next-month" class="p-2 rounded-xl hover:bg-white/5 text-violet-light" aria-label="Mes siguiente">
+              <i data-lucide="chevron-right" class="w-5 h-5"></i>
+            </button>
+          </div>
+          <button type="button" id="btn-add-reg"
+            class="w-full py-3 rounded-2xl bg-gradient-to-r from-violet to-violet-soft font-semibold text-sm shadow-glow active:scale-[0.98] transition-transform">
+            + Nuevo registro
+          </button>
+          <p class="text-[11px] text-white/45 text-center">Lo que no exportaste vive solo en este celular. Exportá seguido.</p>
+        </div>
+
+        <div id="reg-family-chips" class="flex gap-2 overflow-x-auto pb-1"></div>
+
+        <ul id="reg-list" class="space-y-3"></ul>
+        <p id="reg-empty" class="text-xs text-white/40 text-center py-6">Sin registros este mes.</p>
+
+        <div class="glass rounded-2xl p-4 space-y-3">
+          <h2 id="reg-cierre-titulo" class="text-sm font-medium text-white/80">Cierre de —</h2>
+          <ul id="reg-cierre-lista" class="space-y-2"></ul>
+        </div>
+
+        <div class="glass rounded-2xl p-4 space-y-3">
+          <h2 class="text-sm font-medium text-white/80">Datos</h2>
+          <p id="reg-datos-resumen" class="text-xs text-white/50">0 registros guardados · 0 KB</p>
+          <label class="w-full py-3 rounded-xl border border-violet/30 text-sm text-violet-light flex items-center justify-center gap-2 cursor-pointer">
+            <i data-lucide="upload" class="w-4 h-4"></i> Recuperar desde un archivo exportado
+            <input id="input-reg-restaurar" type="file" accept=".txt,text/plain" class="hidden" />
+          </label>
+          <button id="btn-reg-borrar-viejos" type="button" class="w-full py-3 rounded-xl border border-violet/30 text-sm text-violet-light flex items-center justify-center gap-2">
+            <i data-lucide="archive" class="w-4 h-4"></i> Borrar meses ya exportados
+          </button>
+          <button id="btn-reg-borrar-todo" type="button" class="w-full py-3 rounded-xl border border-red-500/30 text-sm text-red-400 flex items-center justify-center gap-2">
+            <i data-lucide="trash-2" class="w-4 h-4"></i> Borrar todos los registros
+          </button>
+        </div>
+      </section>
+
       <!-- LOG -->
       <section id="tab-log" class="tab-panel space-y-4 pt-2">
         <h2 class="text-sm font-medium text-white/80">Registro auditable</h2>
@@ -291,13 +347,13 @@
             <i data-lucide="trash-2" class="w-4 h-4"></i> Borrar todos los datos
           </button>
         </div>
-        <p class="text-center text-[11px] text-white/30 pb-4">Finanzas Laburo · PWA offline · v3.1 · puerto 8789</p>
+        <p class="text-center text-[11px] text-white/30 pb-4">Finanzas Laburo · PWA offline · v3.2 · puerto 8789</p>
       </section>
     </main>
 
     <nav class="fixed bottom-0 left-0 right-0 z-40">
       <div class="max-w-lg mx-auto glass safe-bottom border-t border-violet/20">
-        <div class="grid grid-cols-6 px-1 pt-2 pb-1">
+        <div class="grid grid-cols-7 px-1 pt-2 pb-1">
           <button type="button" data-tab="home" class="nav-item active flex flex-col items-center gap-0.5 py-1.5 text-white/45 text-[10px]">
             <i data-lucide="home" class="w-5 h-5"></i><span>Inicio</span>
             <span class="nav-dot w-1 h-1 rounded-full bg-violet-light"></span>
@@ -308,6 +364,10 @@
           </button>
           <button type="button" data-tab="families" class="nav-item flex flex-col items-center gap-0.5 py-1.5 text-white/45 text-[10px]">
             <i data-lucide="users" class="w-5 h-5"></i><span>Familias</span>
+            <span class="nav-dot w-1 h-1 rounded-full bg-violet-light"></span>
+          </button>
+          <button type="button" data-tab="reg" class="nav-item flex flex-col items-center gap-0.5 py-1.5 text-white/45 text-[10px]">
+            <i data-lucide="notebook-pen" class="w-5 h-5"></i><span>Fichas</span>
             <span class="nav-dot w-1 h-1 rounded-full bg-violet-light"></span>
           </button>
           <button type="button" data-tab="team" class="nav-item flex flex-col items-center gap-0.5 py-1.5 text-white/45 text-[10px]">
@@ -342,6 +402,7 @@
   </div>
   <script src="sheets.js"></script>
   <script src="pdf.js"></script>
+  <script src="registros.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
