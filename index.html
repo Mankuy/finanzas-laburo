@@ -271,10 +271,16 @@
               <i data-lucide="chevron-right" class="w-5 h-5"></i>
             </button>
           </div>
-          <button type="button" id="btn-add-reg"
-            class="w-full py-3 rounded-2xl bg-gradient-to-r from-violet to-violet-soft font-semibold text-sm shadow-glow active:scale-[0.98] transition-transform">
-            + Nuevo registro
-          </button>
+          <div class="flex gap-2">
+            <button type="button" id="btn-add-reg"
+              class="flex-1 py-3 rounded-2xl bg-gradient-to-r from-violet to-violet-soft font-semibold text-sm shadow-glow active:scale-[0.98] transition-transform">
+              + Nuevo registro
+            </button>
+            <button type="button" id="btn-reg-datos"
+              class="hidden shrink-0 px-3.5 py-3 rounded-2xl border border-violet/40 text-xs font-medium text-violet-light hover:bg-violet/15 active:scale-[0.98] transition-transform">
+              Datos de la ficha
+            </button>
+          </div>
           <p class="text-[11px] text-white/45 text-center">Lo que no exportaste vive solo en este celular. Exportá seguido.</p>
         </div>
 
@@ -416,6 +422,7 @@
   </div>
   <script src="sheets.js"></script>
   <script src="pdf.js"></script>
+  <script src="docx.js"></script>
   <script src="registros.js"></script>
   <script src="app.js"></script>
 </body>

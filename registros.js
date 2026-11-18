@@ -32,9 +32,13 @@ window.FLRegistros = (function () {
     { id: 'coordinacion', label: 'Coordinación con institución' },
     { id: 'valoracion',   label: 'Valoración técnica' },
     { id: 'dato',         label: 'Cambio de datos de la familia' },
-    { id: 'otro',         label: 'Otro' }
+    { id: 'otro',         label: 'Otro' },
+    { id: 'saliente',     label: 'Aspecto saliente del mes' },
+    { id: 'observacion',  label: 'Observación' }
   ];
 
+  const MESES_CORTO = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Set', 'Oct', 'Nov', 'Dic'];
+  const NO_LINEA_TIPOS = new Set(['saliente', 'observacion']);
   const TIPO_IDS = new Set(TIPOS.map((t) => t.id));
   const LINEA_IDS = LINEAS.map((l) => l.id);
 
@@ -43,6 +47,7 @@ window.FLRegistros = (function () {
   let regCorrupt = false;
   let activeFilter = 'all';
   let initialized = false;
+  let plantillaCache = null;
 
   let draftTimer = null;
   let lastDraftSaveMs = 0;
@@ -53,6 +58,8 @@ window.FLRegistros = (function () {
       version: REG_VERSION,
       registros: [],
       recordatorios: [],
+      fichaBase: {},
+      cierresMes: {},
       exports: {},
       pendiente: {},
       ultimaFamiliaId: null,
@@ -169,6 +176,8 @@ window.FLRegistros = (function () {
         version: REG_VERSION,
         registros: Array.isArray(p.registros) ? p.registros : [],
         recordatorios: cleanRecs,
+        fichaBase: p.fichaBase && typeof p.fichaBase === 'object' && !Array.isArray(p.fichaBase) ? p.fichaBase : {},
+        cierresMes: p.cierresMes && typeof p.cierresMes === 'object' && !Array.isArray(p.cierresMes) ? p.cierresMes : {},
         exports: p.exports && typeof p.exports === 'object' && !Array.isArray(p.exports) ? p.exports : {},
         pendiente: p.pendiente && typeof p.pendiente === 'object' && !Array.isArray(p.pendiente) ? p.pendiente : {},
         ultimaFamiliaId: typeof p.ultimaFamiliaId === 'string' ? p.ultimaFamiliaId : null,
@@ -287,8 +296,9 @@ window.FLRegistros = (function () {
     }
 
     const tipo = validTipo(data.tipo);
-    const noConcretada = (tipo === 'visita' || tipo === 'llamada') ? Boolean(data.noConcretada) : false;
-    const lineas = normalizeLineas(data.lineas);
+    const sinLinea = NO_LINEA_TIPOS.has(tipo);
+    const noConcretada = (!sinLinea && (tipo === 'visita' || tipo === 'llamada')) ? Boolean(data.noConcretada) : false;
+    const lineas = sinLinea ? [] : normalizeLineas(data.lineas);
     const texto = String(data.texto || '').trim().slice(0, 4000);
 
     if (!texto) {
@@ -914,6 +924,9 @@ window.FLRegistros = (function () {
 
     const snapshot = JSON.stringify(regState);
     regState.registros = regState.registros.filter((r) => !mesesListos.has(String(r.fecha || '').slice(0, 7)));
+    for (const k of Object.keys(regState.cierresMes)) {
+      if (mesesListos.has(k.slice(0, 7))) delete regState.cierresMes[k];
+    }
 
     if (!saveReg()) {
       regState = JSON.parse(snapshot);
@@ -925,8 +938,8 @@ window.FLRegistros = (function () {
   }
 
   function borrarTodoRegistros() {
-    if (!confirm('¿Borrar TODOS los registros de familias?')) return;
-    if (!confirm('Confirmá: se borran todos los registros guardados en este celular.')) return;
+    if (!confirm('¿Borrar TODOS los registros y los datos de las fichas?')) return;
+    if (!confirm('Confirmá: se borran todos los registros, recordatorios y datos de las fichas guardados en este celular.')) return;
 
     clearDraftTimer();
     try {
@@ -958,12 +971,13 @@ window.FLRegistros = (function () {
     const textoArea = form.querySelector('textarea[name="texto"]');
 
     const tipo = validTipo(tipoBtn ? tipoBtn.dataset.regTipo : 'visita');
+    const sinLinea = NO_LINEA_TIPOS.has(tipo);
     return {
       familyId: familySel ? familySel.value : '',
       fecha: fechaInp ? fechaInp.value : '',
       tipo,
-      noConcretada: (tipo === 'visita' || tipo === 'llamada') && Boolean(noConcChk && noConcChk.checked),
-      lineas: normalizeLineas([...lineaBtns].map((b) => b.dataset.regLinea)),
+      noConcretada: (!sinLinea && (tipo === 'visita' || tipo === 'llamada')) && Boolean(noConcChk && noConcChk.checked),
+      lineas: sinLinea ? [] : normalizeLineas([...lineaBtns].map((b) => b.dataset.regLinea)),
       texto: textoArea ? textoArea.value : ''
     };
   }
@@ -980,13 +994,17 @@ window.FLRegistros = (function () {
       b.classList.toggle('active', b.dataset.regTipo === tipo);
     });
 
+    const sinLinea = NO_LINEA_TIPOS.has(tipo);
     const noConcWrap = form.querySelector('#reg-noconc-wrap');
     const noConcChk = form.querySelector('input[name="noConcretada"]');
-    const showNoConc = tipo === 'visita' || tipo === 'llamada';
+    const showNoConc = !sinLinea && (tipo === 'visita' || tipo === 'llamada');
     if (noConcWrap) noConcWrap.classList.toggle('hidden', !showNoConc);
     if (noConcChk) noConcChk.checked = showNoConc ? Boolean(values.noConcretada) : false;
 
-    const lineaSet = new Set(normalizeLineas(values.lineas));
+    const lineasWrap = form.querySelector('#reg-lineas-wrap');
+    if (lineasWrap) lineasWrap.classList.toggle('hidden', sinLinea);
+
+    const lineaSet = new Set(sinLinea ? [] : normalizeLineas(values.lineas));
     form.querySelectorAll('[data-reg-linea]').forEach((b) => {
       b.classList.toggle('active', lineaSet.has(b.dataset.regLinea));
     });
@@ -1165,7 +1183,8 @@ window.FLRegistros = (function () {
       `<button type="button" data-reg-linea="${api.escapeAttr(l.id)}" class="chip px-3 py-1.5 rounded-full text-xs${lineaSet.has(l.id) ? ' active' : ''}">${api.escapeHtml(l.corto)}</button>`
     ).join('');
 
-    const showNoConc = initTipo === 'visita' || initTipo === 'llamada';
+    const showNoConc = !NO_LINEA_TIPOS.has(initTipo) && (initTipo === 'visita' || initTipo === 'llamada');
+    const showLineas = !NO_LINEA_TIPOS.has(initTipo);
 
     api.openModal(isEdit ? 'Editar registro' : 'Nuevo registro', `
       <form id="reg-form" class="space-y-4" data-id="${isEdit ? api.escapeAttr(reg.id) : ''}">
@@ -1197,7 +1216,7 @@ window.FLRegistros = (function () {
             <span>No se concretó</span>
           </label>
         </div>
-        <div>
+        <div id="reg-lineas-wrap"${showLineas ? '' : ' class="hidden"'}>
           <label class="block text-xs text-white/50 mb-1.5">Línea de abordaje (opcional)</label>
           <div class="flex flex-wrap gap-1.5">
             ${lineaButtonsHtml}
@@ -1229,11 +1248,17 @@ window.FLRegistros = (function () {
         form.querySelectorAll('[data-reg-tipo]').forEach((b) => {
           b.classList.toggle('active', b === tipoBtn);
         });
-        const show = chosen === 'visita' || chosen === 'llamada';
+        const sinLinea = NO_LINEA_TIPOS.has(chosen);
+        const show = !sinLinea && (chosen === 'visita' || chosen === 'llamada');
         const wrap = form.querySelector('#reg-noconc-wrap');
         const chk = form.querySelector('input[name="noConcretada"]');
         if (wrap) wrap.classList.toggle('hidden', !show);
         if (!show && chk) chk.checked = false;
+        const lWrap = form.querySelector('#reg-lineas-wrap');
+        if (lWrap) lWrap.classList.toggle('hidden', sinLinea);
+        if (sinLinea) {
+          form.querySelectorAll('[data-reg-linea]').forEach((b) => b.classList.remove('active'));
+        }
         onDraftChange();
         return;
       }
@@ -1279,6 +1304,589 @@ window.FLRegistros = (function () {
     }
   }
 
+  // ─── Ficha Word (parte fija y parte del mes) ───────────────
+  function trimCampo(s) {
+    return String(s ?? '').trim().slice(0, 2000);
+  }
+
+  function shortDDMM(iso) {
+    const f = String(iso || '');
+    return f.length >= 10 ? f.slice(8, 10) + '/' + f.slice(5, 7) : f;
+  }
+
+  function formatTiempos(isoDates) {
+    const uniq = [...new Set(isoDates.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)))].sort();
+    if (!uniq.length) return '';
+    if (uniq.length === 1) {
+      const d = uniq[0];
+      return `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
+    }
+    const parts = uniq.map((d, idx) =>
+      idx === uniq.length - 1
+        ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`
+        : `${d.slice(8, 10)}/${d.slice(5, 7)}`
+    );
+    return parts.slice(0, -1).join(', ') + ' y ' + parts[parts.length - 1];
+  }
+
+  async function obtenerPlantilla() {
+    if (plantillaCache) return plantillaCache;
+    const res = await fetch('./plantillas/ficha-etaf.docx');
+    if (!res.ok) throw new Error('No se pudo cargar la plantilla');
+    plantillaCache = new Uint8Array(await res.arrayBuffer());
+    return plantillaCache;
+  }
+
+  function defaultFichaBase(fam) {
+    const ch = Array.isArray(fam?.children) ? fam.children : [];
+    const nucleo = ch.length
+      ? ch.map((c) => ({
+          nombre: c.name || '',
+          vinculo: '',
+          ci: '',
+          nacimiento: '',
+          credencial: '',
+          sipi: c.sipi || '',
+          ingresos: ''
+        }))
+      : [{ nombre: '', vinculo: '', ci: '', nacimiento: '', credencial: '', sipi: '', ingresos: '' }];
+    return {
+      nucleo,
+      contacto: {
+        direccion: '',
+        telefono: '',
+        salud: '',
+        educativos: '',
+        dupla: api.autor()
+      },
+      ingreso: [{ nombre: '', ci: '', sipi: '', fechaInau: '', fechaCentro: '', motivo: '', juzgado: '' }],
+      contexto: {
+        permanece: '',
+        inicioContexto: '',
+        inicioEtaf: '',
+        acogimiento: '',
+        af: '',
+        tenencia: '',
+        instituciones: '',
+        salientesDerivacion: ''
+      }
+    };
+  }
+
+  function fichaFieldHtml(name, label, value, placeholder = '', multiline = false) {
+    const val = String(value || '');
+    if (multiline) {
+      return `
+        <div>
+          <label class="block text-[11px] text-white/55 mb-1">${api.escapeHtml(label)}</label>
+          <textarea name="${api.escapeAttr(name)}" rows="2" maxlength="2000" placeholder="${api.escapeAttr(placeholder)}"
+            class="select-text w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-violet-light">${api.escapeHtml(val)}</textarea>
+        </div>
+      `;
+    }
+    return `
+      <div>
+        <label class="block text-[11px] text-white/55 mb-1">${api.escapeHtml(label)}</label>
+        <input name="${api.escapeAttr(name)}" type="text" maxlength="2000" value="${api.escapeAttr(val)}" placeholder="${api.escapeAttr(placeholder)}"
+          class="select-text w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-violet-light" />
+      </div>
+    `;
+  }
+
+  function nucleoRowHtml(p = {}) {
+    return `
+      <div class="ficha-nucleo-row rounded-xl bg-void/40 p-3 border border-white/10 space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-medium text-violet-light">Persona</span>
+          <button type="button" class="btn-ficha-rem-row text-[11px] text-red-400 hover:underline">Quitar</button>
+        </div>
+        ${fichaFieldHtml('n_nombre', 'Nombres y Apellidos', p.nombre, 'Ej. Marta Ejemplo')}
+        ${fichaFieldHtml('n_vinculo', 'Vínculo / Parentesco', p.vinculo, 'Ej. Referente familiar')}
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          ${fichaFieldHtml('n_ci', 'CI', p.ci, 'Ej. 1.111.111-1')}
+          ${fichaFieldHtml('n_nacimiento', 'Fecha nacimiento', p.nacimiento, 'Ej. 01/02/1990')}
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          ${fichaFieldHtml('n_credencial', 'Credencial Cívica', p.credencial)}
+          ${fichaFieldHtml('n_sipi', 'SIPI', p.sipi)}
+        </div>
+        ${fichaFieldHtml('n_ingresos', 'Ingresos Totales', p.ingresos, 'Prestaciones, laborales, otros', true)}
+      </div>
+    `;
+  }
+
+  function ingresoRowHtml(ing = {}) {
+    return `
+      <div class="ficha-ingreso-row rounded-xl bg-void/40 p-3 border border-white/10 space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-medium text-violet-light">Ingreso 24 h</span>
+          <button type="button" class="btn-ficha-rem-row text-[11px] text-red-400 hover:underline">Quitar</button>
+        </div>
+        ${fichaFieldHtml('i_nombre', 'Nombres y Apellidos', ing.nombre)}
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          ${fichaFieldHtml('i_ci', 'CI', ing.ci)}
+          ${fichaFieldHtml('i_sipi', 'SIPI', ing.sipi)}
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          ${fichaFieldHtml('i_fechaInau', 'Fecha ingreso a INAU', ing.fechaInau, 'Ej. Junio 2023')}
+          ${fichaFieldHtml('i_fechaCentro', 'Fecha ingreso al Centro', ing.fechaCentro, 'Ej. Junio 2023')}
+        </div>
+        ${fichaFieldHtml('i_motivo', 'Motivo del Ingreso', ing.motivo, '', true)}
+        ${fichaFieldHtml('i_juzgado', 'Juzgado / IUE', ing.juzgado)}
+      </div>
+    `;
+  }
+
+  function openFichaDatosModal(familyId) {
+    if (regCorrupt) {
+      api.toast('No se pudieron leer los registros');
+      return;
+    }
+    const fam = api.familyById(familyId);
+    if (!fam || fam.id === 'fam-misc') return;
+
+    const base = regState.fichaBase[familyId] || defaultFichaBase(fam);
+    const nucleoArr = Array.isArray(base.nucleo) && base.nucleo.length ? base.nucleo : [{}];
+    const ingresoArr = Array.isArray(base.ingreso) && base.ingreso.length ? base.ingreso : [{}];
+    const c = base.contexto || {};
+    const ct = base.contacto || {};
+
+    api.openModal(`Datos de la ficha — ${fam.name}`, `
+      <div class="space-y-4">
+        <label class="w-full py-2.5 px-3 rounded-xl border border-violet/40 text-xs font-medium text-violet-light flex items-center justify-center gap-2 cursor-pointer hover:bg-violet/10">
+          <span>📄 Importar desde una ficha Word anterior</span>
+          <input type="file" id="reg-input-ficha" accept=".docx" class="hidden" />
+        </label>
+
+        <form id="ficha-datos-form" class="space-y-5">
+          <div class="space-y-2.5">
+            <div class="flex items-center justify-between gap-2">
+              <h4 class="text-xs font-semibold uppercase tracking-wide text-violet-light">Núcleo familiar actual</h4>
+              <button type="button" id="btn-ficha-add-nucleo" class="text-xs text-violet-light font-medium">+ Agregar persona</button>
+            </div>
+            <div id="ficha-nucleo-list" class="space-y-2.5">
+              ${nucleoArr.map(nucleoRowHtml).join('')}
+            </div>
+          </div>
+
+          <div class="space-y-2.5">
+            <h4 class="text-xs font-semibold uppercase tracking-wide text-violet-light">Contacto</h4>
+            <div class="rounded-xl bg-void/40 p-3 border border-white/10 space-y-2">
+              ${fichaFieldHtml('c_direccion', 'Dirección / Barrio', ct.direccion, '', true)}
+              ${fichaFieldHtml('c_telefono', 'Teléfono de contacto', ct.telefono)}
+              ${fichaFieldHtml('c_salud', 'Centro de Salud', ct.salud, '', true)}
+              ${fichaFieldHtml('c_educativos', 'Centros Educativos', ct.educativos, '', true)}
+              ${fichaFieldHtml('c_dupla', 'Dupla Referente', ct.dupla, '', true)}
+            </div>
+          </div>
+
+          <div class="space-y-2.5">
+            <div class="flex items-center justify-between gap-2">
+              <h4 class="text-xs font-semibold uppercase tracking-wide text-violet-light">Ingreso al sistema 24 h</h4>
+              <button type="button" id="btn-ficha-add-ingreso" class="text-xs text-violet-light font-medium">+ Agregar ingreso</button>
+            </div>
+            <div id="ficha-ingreso-list" class="space-y-2.5">
+              ${ingresoArr.map(ingresoRowHtml).join('')}
+            </div>
+          </div>
+
+          <div class="space-y-2.5">
+            <h4 class="text-xs font-semibold uppercase tracking-wide text-violet-light">Contexto familiar</h4>
+            <div class="rounded-xl bg-void/40 p-3 border border-white/10 space-y-2">
+              ${fichaFieldHtml('x_permanece', 'Permanece en Centro (Si, No)', c.permanece)}
+              ${fichaFieldHtml('x_inicioContexto', 'Fecha de inicio del Contexto', c.inicioContexto)}
+              ${fichaFieldHtml('x_inicioEtaf', 'Fecha inicio intervención ETAF CAFF', c.inicioEtaf)}
+              <div>
+                <label class="block text-[11px] text-white/55 mb-1">Acogimiento Familiar</label>
+                <select name="x_acogimiento"
+                  class="w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-violet-light">
+                  <option value="" ${!c.acogimiento ? 'selected' : ''}>Sin marcar</option>
+                  <option value="SI" ${c.acogimiento === 'SI' ? 'selected' : ''}>SI</option>
+                  <option value="NO" ${c.acogimiento === 'NO' ? 'selected' : ''}>NO</option>
+                </select>
+              </div>
+              ${fichaFieldHtml('x_af', 'En caso de tener AF (Modalidad / Titular / Convenio)', c.af, '', true)}
+              ${fichaFieldHtml('x_tenencia', 'Tenencia (Si, No, En Trámite)', c.tenencia)}
+              ${fichaFieldHtml('x_instituciones', 'Instituciones vinculadas al Núcleo Familiar', c.instituciones, '', true)}
+              ${fichaFieldHtml('x_salientesDerivacion', 'Aspectos salientes al momento de la derivación', c.salientesDerivacion, '', true)}
+            </div>
+          </div>
+
+          <button type="submit" class="w-full py-3 rounded-2xl bg-gradient-to-r from-violet to-violet-soft font-semibold text-sm">
+            Guardar
+          </button>
+        </form>
+      </div>
+    `);
+
+    const form = document.getElementById('ficha-datos-form');
+    const nucleoList = document.getElementById('ficha-nucleo-list');
+    const ingresoList = document.getElementById('ficha-ingreso-list');
+    if (!form || !nucleoList || !ingresoList) return;
+
+    document.getElementById('btn-ficha-add-nucleo')?.addEventListener('click', () => {
+      nucleoList.insertAdjacentHTML('beforeend', nucleoRowHtml({}));
+    });
+    document.getElementById('btn-ficha-add-ingreso')?.addEventListener('click', () => {
+      ingresoList.insertAdjacentHTML('beforeend', ingresoRowHtml({}));
+    });
+
+    form.addEventListener('click', (e) => {
+      const rem = e.target.closest('.btn-ficha-rem-row');
+      if (!rem) return;
+      const row = rem.closest('.ficha-nucleo-row, .ficha-ingreso-row');
+      if (row) row.remove();
+    });
+
+    document.getElementById('reg-input-ficha')?.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!file) return;
+      if (!window.FLDocx) {
+        api.toast('No se pudo cargar el generador de fichas');
+        return;
+      }
+      try {
+        const buf = await file.arrayBuffer();
+        const parsed = await window.FLDocx.leerFicha(new Uint8Array(buf));
+        nucleoList.innerHTML = (parsed.nucleo && parsed.nucleo.length ? parsed.nucleo : [{}]).map(nucleoRowHtml).join('');
+        ingresoList.innerHTML = (parsed.ingreso && parsed.ingreso.length ? parsed.ingreso : [{}]).map(ingresoRowHtml).join('');
+        const pct = parsed.contacto || {};
+        form.querySelector('[name="c_direccion"]').value = pct.direccion || '';
+        form.querySelector('[name="c_telefono"]').value = pct.telefono || '';
+        form.querySelector('[name="c_salud"]').value = pct.salud || '';
+        form.querySelector('[name="c_educativos"]').value = pct.educativos || '';
+        form.querySelector('[name="c_dupla"]').value = pct.dupla || '';
+        const pcx = parsed.contexto || {};
+        form.querySelector('[name="x_permanece"]').value = pcx.permanece || '';
+        form.querySelector('[name="x_inicioContexto"]').value = pcx.inicioContexto || '';
+        form.querySelector('[name="x_inicioEtaf"]').value = pcx.inicioEtaf || '';
+        form.querySelector('[name="x_acogimiento"]').value = pcx.acogimiento || '';
+        form.querySelector('[name="x_af"]').value = pcx.af || '';
+        form.querySelector('[name="x_tenencia"]').value = pcx.tenencia || '';
+        form.querySelector('[name="x_instituciones"]').value = pcx.instituciones || '';
+        form.querySelector('[name="x_salientesDerivacion"]').value = pcx.salientesDerivacion || '';
+        api.toast('Datos cargados. Revisá y tocá Guardar');
+      } catch {
+        api.toast('Ese archivo no parece una ficha ETAF');
+      }
+    });
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const readVal = (root, name) => trimCampo(root.querySelector(`[name="${name}"]`)?.value);
+
+      const nucleo = [...nucleoList.querySelectorAll('.ficha-nucleo-row')]
+        .map((row) => ({
+          nombre: readVal(row, 'n_nombre'),
+          vinculo: readVal(row, 'n_vinculo'),
+          ci: readVal(row, 'n_ci'),
+          nacimiento: readVal(row, 'n_nacimiento'),
+          credencial: readVal(row, 'n_credencial'),
+          sipi: readVal(row, 'n_sipi'),
+          ingresos: readVal(row, 'n_ingresos')
+        }))
+        .filter((p) => p.nombre || p.vinculo || p.ci || p.nacimiento || p.credencial || p.sipi || p.ingresos);
+
+      const ingreso = [...ingresoList.querySelectorAll('.ficha-ingreso-row')]
+        .map((row) => ({
+          nombre: readVal(row, 'i_nombre'),
+          ci: readVal(row, 'i_ci'),
+          sipi: readVal(row, 'i_sipi'),
+          fechaInau: readVal(row, 'i_fechaInau'),
+          fechaCentro: readVal(row, 'i_fechaCentro'),
+          motivo: readVal(row, 'i_motivo'),
+          juzgado: readVal(row, 'i_juzgado')
+        }))
+        .filter((r) => r.nombre || r.ci || r.sipi || r.fechaInau || r.fechaCentro || r.motivo || r.juzgado);
+
+      const acogRaw = readVal(form, 'x_acogimiento');
+      const acogimiento = (acogRaw === 'SI' || acogRaw === 'NO') ? acogRaw : '';
+
+      const snapshot = JSON.stringify(regState);
+      regState.fichaBase[familyId] = {
+        nucleo,
+        contacto: {
+          direccion: readVal(form, 'c_direccion'),
+          telefono: readVal(form, 'c_telefono'),
+          salud: readVal(form, 'c_salud'),
+          educativos: readVal(form, 'c_educativos'),
+          dupla: readVal(form, 'c_dupla')
+        },
+        ingreso,
+        contexto: {
+          permanece: readVal(form, 'x_permanece'),
+          inicioContexto: readVal(form, 'x_inicioContexto'),
+          inicioEtaf: readVal(form, 'x_inicioEtaf'),
+          acogimiento,
+          af: readVal(form, 'x_af'),
+          tenencia: readVal(form, 'x_tenencia'),
+          instituciones: readVal(form, 'x_instituciones'),
+          salientesDerivacion: readVal(form, 'x_salientesDerivacion')
+        },
+        updatedAt: new Date().toISOString()
+      };
+
+      if (!saveReg()) {
+        regState = JSON.parse(snapshot);
+        return;
+      }
+      render();
+      api.closeModal();
+      api.toast('Datos de la ficha guardados');
+    });
+  }
+
+  function buildDatosFichaWord(mes, familyId, cierre) {
+    const regs = registrosDelMes(mes, familyId);
+    const gastos = api.familyById(familyId) ? gastosDeFamiliaEnMes(mes, familyId) : [];
+
+    const salienteRegs = regs.filter((r) => r.tipo === 'saliente');
+    const obsYValRegs = regs.filter((r) =>
+      r.tipo === 'observacion' ||
+      (r.tipo === 'valoracion' && (!Array.isArray(r.lineas) || !r.lineas.length))
+    );
+
+    const salientesLines = salienteRegs.map((r) => `${shortDDMM(r.fecha)}: ${String(r.texto || '').trim()}`);
+    if (String(cierre.salientes || '').trim()) {
+      if (salientesLines.length) salientesLines.push('');
+      salientesLines.push(String(cierre.salientes).trim());
+    }
+
+    const obsLines = obsYValRegs.map((r) => `${shortDDMM(r.fecha)}: ${String(r.texto || '').trim()}`);
+    if (String(cierre.observaciones || '').trim()) {
+      if (obsLines.length) obsLines.push('');
+      obsLines.push(String(cierre.observaciones).trim());
+    }
+
+    const lineaApoyos = LINEA_IDS.includes(cierre.lineaApoyos) ? cierre.lineaApoyos : 'trabajo';
+    const lineasCols = LINEAS.map((l) => {
+      const lid = l.id;
+      const valRegs = regs.filter((r) =>
+        r.tipo === 'valoracion' && Array.isArray(r.lineas) && r.lineas.includes(lid)
+      );
+      const accRegs = regs.filter((r) =>
+        r.tipo !== 'saliente' &&
+        r.tipo !== 'observacion' &&
+        r.tipo !== 'valoracion' &&
+        (Array.isArray(r.lineas) && r.lineas.length ? r.lineas.includes(lid) : lid === 'familia')
+      );
+
+      const tiemposDates = [];
+      const valOverride = String((cierre.valoracion && cierre.valoracion[lid]) || '').trim();
+      let col1 = '';
+      if (valOverride) {
+        col1 = valOverride;
+      } else if (valRegs.length) {
+        col1 = valRegs.map((r) => {
+          tiemposDates.push(r.fecha);
+          return `${shortDDMM(r.fecha)}: ${String(r.texto || '').trim()}`;
+        }).join('\n');
+      }
+
+      const accLines = accRegs.map((r) => {
+        tiemposDates.push(r.fecha);
+        const noConc = r.noConcretada ? ' · no se concretó' : '';
+        return `• ${shortDDMM(r.fecha)} · ${tipoLabel(r.tipo)}${noConc}: ${String(r.texto || '').trim()}`;
+      });
+
+      if (lid === lineaApoyos && gastos.length) {
+        if (accLines.length) accLines.push('');
+        accLines.push('APOYOS ECONÓMICOS DEL MES');
+        let total = 0;
+        for (const g of gastos) {
+          total += Number(g.amount) || 0;
+          tiemposDates.push(g.date);
+          accLines.push(`• ${shortDDMM(g.date)} · ${api.money(g.amount)} · ${g.what || ''}`);
+        }
+        total = Math.round(total * 100) / 100;
+        accLines.push('Total: ' + api.money(total));
+      }
+
+      const col2 = accLines.join('\n');
+      const col3 = (col1 || col2) ? formatTiempos(tiemposDates) : '';
+      return [col1, col2, col3];
+    });
+
+    const base = regState.fichaBase[familyId] || {};
+    return {
+      nucleo: Array.isArray(base.nucleo) ? base.nucleo : [],
+      contacto: base.contacto || {},
+      ingreso: Array.isArray(base.ingreso) ? base.ingreso : [],
+      contexto: base.contexto || {},
+      periodo: String(cierre.periodo || '').trim(),
+      salientes: salientesLines.join('\n'),
+      fecha: api.formatDateNum(api.todayISO()),
+      lineas: lineasCols,
+      observaciones: obsLines.join('\n')
+    };
+  }
+
+  function openFichaWordModal(familyId) {
+    if (regCorrupt) {
+      api.toast('No se pudieron leer los registros');
+      return;
+    }
+    if (!window.FLDocx) {
+      api.toast('No se pudo cargar el generador de fichas');
+      return;
+    }
+
+    obtenerPlantilla().catch(() => {});
+
+    const { year, month } = api.getView();
+    const mes = api.monthKey(year, month);
+    const clave = mes + '|' + familyId;
+    const famName = familyDisplayName(familyId);
+    const saved = regState.cierresMes[clave] || {};
+    const valSaved = saved.valoracion || {};
+    const regs = registrosDelMes(mes, familyId);
+
+    const salienteRegs = regs.filter((r) => r.tipo === 'saliente');
+    const obsYValRegs = regs.filter((r) =>
+      r.tipo === 'observacion' ||
+      (r.tipo === 'valoracion' && (!Array.isArray(r.lineas) || !r.lineas.length))
+    );
+    const sinLineaAccion = regs.filter((r) =>
+      r.tipo !== 'saliente' &&
+      r.tipo !== 'observacion' &&
+      r.tipo !== 'valoracion' &&
+      (!Array.isArray(r.lineas) || !r.lineas.length)
+    );
+
+    const hasBase = Boolean(regState.fichaBase[familyId]);
+    const canEditBase = Boolean(api.familyById(familyId)) && familyId !== 'fam-misc';
+
+    const salientesPreview = salienteRegs.length
+      ? `<p class="text-[11px] text-white/45 mt-1">Ya cargado en el mes: ${api.escapeHtml(salienteRegs.map((r) => `${shortDDMM(r.fecha)}: ${r.texto}`).join(' · '))}</p>`
+      : '';
+    const obsPreview = obsYValRegs.length
+      ? `<p class="text-[11px] text-white/45 mt-1">Ya cargado en el mes: ${api.escapeHtml(obsYValRegs.map((r) => `${shortDDMM(r.fecha)}: ${r.texto}`).join(' · '))}</p>`
+      : '';
+
+    const lineaApoyos = LINEA_IDS.includes(saved.lineaApoyos) ? saved.lineaApoyos : 'trabajo';
+    const lineaOptionsHtml = LINEAS.map((l) =>
+      `<option value="${api.escapeAttr(l.id)}" ${l.id === lineaApoyos ? 'selected' : ''}>${api.escapeHtml(l.corto)}</option>`
+    ).join('');
+
+    const valFieldsHtml = LINEAS.map((l) => `
+      <div>
+        <label class="block text-[11px] text-white/55 mb-1">${api.escapeHtml(l.corto)}</label>
+        <textarea name="val_${api.escapeAttr(l.id)}" rows="2" maxlength="2000"
+          class="select-text w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-violet-light">${api.escapeHtml(valSaved[l.id] || '')}</textarea>
+      </div>
+    `).join('');
+
+    api.openModal(`Cierre del mes — ${famName}`, `
+      <div class="space-y-4">
+        ${!hasBase ? `
+          <div class="rounded-xl bg-amber-500/15 border border-amber-400/35 px-3 py-2.5 text-xs text-amber-200 flex items-center justify-between gap-2">
+            <span>Esta familia no tiene datos de la ficha cargados</span>
+            ${canEditBase ? `<button type="button" id="btn-word-cargar-datos" class="shrink-0 px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-400/40 font-medium text-amber-100">Cargar</button>` : ''}
+          </div>
+        ` : ''}
+        ${sinLineaAccion.length > 0 ? `
+          <div class="rounded-xl bg-amber-500/15 border border-amber-400/35 px-3 py-2.5 text-xs text-amber-200">
+            Hay ${sinLineaAccion.length} ${sinLineaAccion.length === 1 ? 'registro' : 'registros'} sin línea de abordaje: van a Vivir en familia
+          </div>
+        ` : ''}
+
+        <form id="ficha-word-form" class="space-y-4">
+          <div>
+            <label class="block text-xs text-white/50 mb-1">Período</label>
+            <input name="periodo" type="text" maxlength="2000" value="${api.escapeAttr(saved.periodo !== undefined ? saved.periodo : mesDisplay(mes))}"
+              class="select-text w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-violet-light" />
+          </div>
+          <div>
+            <label class="block text-xs text-white/50 mb-1">Aspectos salientes del mes</label>
+            <textarea name="salientes" rows="3" maxlength="2000"
+              class="select-text w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-violet-light">${api.escapeHtml(saved.salientes || '')}</textarea>
+            ${salientesPreview}
+          </div>
+          <div>
+            <label class="block text-xs text-white/50 mb-1">Observaciones</label>
+            <textarea name="observaciones" rows="3" maxlength="2000"
+              class="select-text w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-violet-light">${api.escapeHtml(saved.observaciones || '')}</textarea>
+            ${obsPreview}
+          </div>
+          <div>
+            <label class="block text-xs text-white/50 mb-1">Apoyos económicos van en</label>
+            <select name="lineaApoyos"
+              class="w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-violet-light">
+              ${lineaOptionsHtml}
+            </select>
+          </div>
+          <details class="rounded-xl bg-void/40 border border-white/10 p-3">
+            <summary class="text-xs font-medium text-violet-light cursor-pointer">Valoración por línea (opcional)</summary>
+            <p class="text-[11px] text-white/45 mt-2 mb-3">Si lo dejás vacío, se usan tus registros de Valoración técnica de esa línea.</p>
+            <div class="space-y-2.5">
+              ${valFieldsHtml}
+            </div>
+          </details>
+          <button type="submit" id="btn-generar-word" class="w-full py-3 rounded-2xl bg-gradient-to-r from-violet to-violet-soft font-semibold text-sm">
+            Generar Word
+          </button>
+        </form>
+      </div>
+    `);
+
+    document.getElementById('btn-word-cargar-datos')?.addEventListener('click', () => {
+      openFichaDatosModal(familyId);
+    });
+
+    const form = document.getElementById('ficha-word-form');
+    if (!form) return;
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!window.FLDocx) {
+        api.toast('No se pudo cargar el generador de fichas');
+        return;
+      }
+
+      const valoracion = {};
+      for (const l of LINEAS) {
+        valoracion[l.id] = trimCampo(form.querySelector(`[name="val_${l.id}"]`)?.value);
+      }
+      const lineaChosen = form.querySelector('[name="lineaApoyos"]')?.value;
+      const cierre = {
+        periodo: trimCampo(form.querySelector('[name="periodo"]')?.value),
+        salientes: trimCampo(form.querySelector('[name="salientes"]')?.value),
+        observaciones: trimCampo(form.querySelector('[name="observaciones"]')?.value),
+        valoracion,
+        lineaApoyos: LINEA_IDS.includes(lineaChosen) ? lineaChosen : 'trabajo',
+        updatedAt: new Date().toISOString()
+      };
+
+      const snapshot = JSON.stringify(regState);
+      regState.cierresMes[clave] = cierre;
+      if (!saveReg()) {
+        regState = JSON.parse(snapshot);
+        return;
+      }
+
+      const btn = document.getElementById('btn-generar-word');
+      if (btn) btn.disabled = true;
+      try {
+        const plantillaBytes = await obtenerPlantilla();
+        const datos = buildDatosFichaWord(mes, familyId, cierre);
+        const blob = await window.FLDocx.llenarFicha(plantillaBytes, datos);
+        const safeFam = famName.replace(/[\\/:*?"<>|]/g, '-');
+        const filename = `Ficha Registro Etaf Caff - ${safeFam} (${MESES_CORTO[month]} ${String(year).slice(-2)}).docx`;
+        const file = new File([blob], filename, {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        });
+        await compartirArchivos([file]);
+        api.closeModal();
+      } catch (err) {
+        console.error('[Ficha Word]', err);
+        api.toast('No se pudo generar la ficha Word');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    });
+  }
+
   // ─── Render de la pestaña ──────────────────────────────────
   function render() {
     if (!api) return;
@@ -1293,6 +1901,7 @@ window.FLRegistros = (function () {
 
     const avisoEl = document.getElementById('reg-aviso');
     const chipsEl = document.getElementById('reg-family-chips');
+    const btnDatosEl = document.getElementById('btn-reg-datos');
     const recHeaderEl = document.getElementById('reg-rec-header');
     const recListEl = document.getElementById('reg-rec-list');
     const recEmptyBtnEl = document.getElementById('btn-add-rec-empty');
@@ -1320,6 +1929,7 @@ window.FLRegistros = (function () {
     if (regCorrupt) {
       if (avisoEl) { avisoEl.classList.add('hidden'); avisoEl.textContent = ''; }
       if (chipsEl) chipsEl.innerHTML = '';
+      if (btnDatosEl) btnDatosEl.classList.add('hidden');
       if (recHeaderEl) recHeaderEl.classList.add('hidden');
       if (recListEl) recListEl.innerHTML = '';
       if (recEmptyBtnEl) recEmptyBtnEl.classList.add('hidden');
@@ -1357,6 +1967,10 @@ window.FLRegistros = (function () {
         const isAct = c.id === activeFilter;
         return `<button type="button" data-reg-family="${api.escapeAttr(c.id)}" class="chip shrink-0 px-3 py-1.5 rounded-full text-xs${isAct ? ' active' : ''}">${api.escapeHtml(c.name)}</button>`;
       }).join('');
+    }
+    if (btnDatosEl) {
+      const showDatos = activeFilter !== 'all' && activeFilter !== 'fam-misc' && Boolean(api.familyById(activeFilter));
+      btnDatosEl.classList.toggle('hidden', !showDatos);
     }
 
     // Caja «Para hacer» (recordatorios pendientes) y punto en barra inferior
@@ -1473,15 +2087,21 @@ window.FLRegistros = (function () {
           else if (item.estado === 'cambios sin exportar') statusClass = 'text-amber-300';
 
           return `
-            <li class="rounded-xl bg-void/40 px-3 py-2.5 border border-white/5 flex items-center justify-between gap-2">
+            <li class="rounded-xl bg-void/40 px-3 py-2.5 border border-white/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div class="min-w-0">
                 <p class="text-xs font-medium text-white/90 truncate">${api.escapeHtml(item.nombre)} · ${regTxt}${gastoTxt}</p>
                 <p class="text-[11px] ${statusClass} mt-0.5">${api.escapeHtml(item.estado)}</p>
               </div>
-              <button type="button" data-reg-export="${api.escapeAttr(item.familyId)}"
-                class="shrink-0 px-3 py-1.5 rounded-xl border border-violet/40 text-xs font-medium text-violet-light hover:bg-violet/15">
-                Exportar
-              </button>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <button type="button" data-reg-word="${api.escapeAttr(item.familyId)}"
+                  class="px-2.5 py-1.5 rounded-xl border border-violet/40 text-xs font-medium text-violet-light hover:bg-violet/15">
+                  Ficha Word
+                </button>
+                <button type="button" data-reg-export="${api.escapeAttr(item.familyId)}"
+                  class="px-2.5 py-1.5 rounded-xl border border-violet/40 text-xs font-medium text-violet-light hover:bg-violet/15">
+                  Exportar
+                </button>
+              </div>
             </li>
           `;
         }).join('');
@@ -1514,6 +2134,9 @@ window.FLRegistros = (function () {
 
     document.getElementById('btn-add-reg-home')?.addEventListener('click', () => openRegistroModal());
     document.getElementById('btn-add-reg')?.addEventListener('click', () => openRegistroModal());
+    document.getElementById('btn-reg-datos')?.addEventListener('click', () => {
+      if (activeFilter !== 'all') openFichaDatosModal(activeFilter);
+    });
     document.getElementById('btn-add-rec')?.addEventListener('click', () => openRecordatorioModal());
     document.getElementById('btn-add-rec-empty')?.addEventListener('click', () => openRecordatorioModal());
     document.getElementById('reg-prev-month')?.addEventListener('click', () => api.shiftViewMonth(-1));
@@ -1564,6 +2187,12 @@ window.FLRegistros = (function () {
       const doneRecBtn = e.target.closest('[data-done-rec]');
       if (doneRecBtn) {
         marcarRecordatorioHecho(doneRecBtn.dataset.doneRec);
+        return;
+      }
+
+      const wordBtn = e.target.closest('[data-reg-word]');
+      if (wordBtn) {
+        openFichaWordModal(wordBtn.dataset.regWord);
         return;
       }
 
