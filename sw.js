@@ -1,11 +1,12 @@
 /* Finanzas Laburo — offline-first cache-first */
-const CACHE = 'finanzas-laburo-v14';
+const CACHE = 'finanzas-laburo-v15';
 const ASSETS = [
   './',
   './index.html',
   './app.js',
   './sheets.js',
   './pdf.js',
+  './registros.js',
   './manifest.json',
   './icons/icon-192.svg',
   './icons/icon-512.svg',
@@ -21,7 +22,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
     for (const url of ASSETS) {
-      try { await cache.add(url); } catch (e) { console.warn('[SW]', url, e); }
+      try { await cache.add(new Request(url, { cache: 'no-cache' })); } catch (e) { console.warn('[SW]', url, e); }
     }
     for (const url of CDN) {
       try {
