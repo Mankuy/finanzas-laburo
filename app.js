@@ -1007,9 +1007,9 @@
       const cid = c.id || uid();
       return `
         <div class="child-row flex items-center gap-2 bg-void/40 p-2 rounded-xl border border-white/5" data-id="${escapeAttr(cid)}">
-          <input type="text" name="child_name" placeholder="Nombre (ej. Valentín)" value="${escapeAttr(c.name || '')}"
+          <input type="text" name="child_name" placeholder="Nombre (ej. Juan)" value="${escapeAttr(c.name || '')}"
             class="flex-1 min-w-0 bg-void/60 border border-violet/30 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-white/30 focus:outline-none focus:border-violet-light" />
-          <input type="text" name="child_sipi" inputmode="numeric" placeholder="SIPI (ej. 700963)" value="${escapeAttr(c.sipi || '')}"
+          <input type="text" name="child_sipi" inputmode="numeric" placeholder="SIPI (ej. 123456)" value="${escapeAttr(c.sipi || '')}"
             class="w-28 sm:w-32 bg-void/60 border border-violet/30 rounded-lg px-2.5 py-1.5 text-xs text-white tabular-nums placeholder-white/30 focus:outline-none focus:border-violet-light" />
           <button type="button" class="btn-remove-child p-1.5 text-white/40 hover:text-red-400 shrink-0" title="Quitar">
             <i data-lucide="trash-2" class="w-3.5 h-3.5 pointer-events-none"></i>
@@ -1040,7 +1040,7 @@
           <div id="children-list-container" class="space-y-2">
             ${initialRows}
           </div>
-          <p class="text-[10px] text-white/35 mt-1.5">El nombre es opcional. Sirve para reconocerlo fácil al cargar gastos (ej. "Valentín · 700963").</p>
+          <p class="text-[10px] text-white/35 mt-1.5">El nombre es opcional. Sirve para reconocerlo fácil al cargar gastos (ej. "Juan · 123456").</p>
         </div>
         <div>
           <label class="block text-xs text-white/50 mb-1">Nombre en la planilla (opcional)</label>
