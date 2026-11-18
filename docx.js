@@ -417,14 +417,11 @@ window.FLDocx = (function () {
     // T4: Contexto familiar
     const ctx = datos.contexto || {};
     const t4Rows = directChildren(tables[4], 'tr');
-    const acogText = ctx.acogimiento === 'SI'
-      ? 'Marcado: SI'
-      : (ctx.acogimiento === 'NO' ? 'Marcado: NO' : '');
     const t4Spec = [
       ['Permanece en Centro (Si, No):', ctx.permanece || ''],
       ['Fecha de inicio del Contexto', ctx.inicioContexto || ''],
       ['Fecha inicio intervención ETAF CAFF:', ctx.inicioEtaf || ''],
-      ['Acogimiento Familiar:', acogText],
+      null,
       null,
       ['Tenencia (Si, No, En Trámite):', ctx.tenencia || ''],
       ['Instituciones vinculadas al Núcleo Familiar:', ctx.instituciones || ''],
@@ -432,7 +429,18 @@ window.FLDocx = (function () {
     ];
     for (let r = 0; r < t4Spec.length; r++) {
       const cell = directChildren(t4Rows[r], 'tc')[0];
-      if (r === 4) {
+      if (r === 3) {
+        if (ctx.acogimiento === 'SI' || ctx.acogimiento === 'NO') {
+          const acogP = directChildren(cell, 'p').find((p) => pText(p).replace(/^\s+/, '').startsWith('Acogimiento Familiar:'));
+          if (!acogP) throw new Error('No se encontró Acogimiento Familiar:');
+          const acogRPr = findBaseRPr(acogP, false);
+          clearRuns(acogP);
+          const textoAcog = ctx.acogimiento === 'SI'
+            ? 'Acogimiento Familiar:   SI (X)      NO ( )'
+            : 'Acogimiento Familiar:   SI ( )      NO (X)';
+          appendRunsWithHighlight(doc, acogP, acogRPr, textoAcog, false);
+        }
+      } else if (r === 4) {
         fillLabel(doc, cell, 'En caso de tener AF:', ctx.afModalidad || '');
         fillLabel(doc, cell, 'Titular/ Proyecto:', ctx.afTitular || '');
         fillLabel(doc, cell, 'Fecha Convenio:', ctx.afConvenio || '');
@@ -658,10 +666,10 @@ window.FLDocx = (function () {
       }
 
       if (key === 'acogimiento') {
-        const joined = cleaned.join(' ').trim();
-        if (joined.includes('Marcado: SI') || (joined.endsWith('SI') && !joined.includes('NO'))) {
+        const raw3 = directChildren(cell, 'p').map((p) => pTextWithBr(p)).join(' ');
+        if (raw3.includes('SI (X)') || raw3.includes('Marcado: SI')) {
           contexto.acogimiento = 'SI';
-        } else if (joined.includes('Marcado: NO')) {
+        } else if (raw3.includes('NO (X)') || raw3.includes('Marcado: NO')) {
           contexto.acogimiento = 'NO';
         } else {
           contexto.acogimiento = '';
