@@ -257,6 +257,8 @@
       <section id="tab-reg" class="tab-panel space-y-4 pt-2">
         <button type="button" id="reg-aviso"
           class="hidden w-full text-left rounded-2xl px-4 py-3 text-xs bg-amber-500/15 border border-amber-400/40 text-amber-200 leading-snug"></button>
+        <button type="button" id="reg-aviso-respaldo"
+          class="hidden w-full text-left rounded-2xl px-4 py-3 text-xs bg-amber-500/15 border border-amber-400/40 text-amber-200 leading-snug disabled:opacity-50"></button>
 
         <div class="glass rounded-2xl p-4 space-y-3">
           <div class="flex items-center justify-between">
@@ -311,6 +313,13 @@
         <div class="glass rounded-2xl p-4 space-y-3">
           <h2 class="text-sm font-medium text-white/80">Datos</h2>
           <p id="reg-datos-resumen" class="text-xs text-white/50">0 registros guardados · 0 KB</p>
+          <button id="btn-reg-respaldo" type="button" class="w-full py-3 rounded-xl border border-violet/30 text-sm text-violet-light flex items-center justify-center gap-2">
+            <i data-lucide="download" class="w-4 h-4"></i> Respaldo completo
+          </button>
+          <label class="w-full py-3 rounded-xl border border-violet/30 text-sm text-violet-light flex items-center justify-center gap-2 cursor-pointer">
+            <i data-lucide="upload" class="w-4 h-4"></i> Recuperar respaldo de Fichas
+            <input id="input-reg-respaldo" type="file" accept=".json,application/json" class="hidden" />
+          </label>
           <label class="w-full py-3 rounded-xl border border-violet/30 text-sm text-violet-light flex items-center justify-center gap-2 cursor-pointer">
             <i data-lucide="upload" class="w-4 h-4"></i> Recuperar desde un archivo exportado
             <input id="input-reg-restaurar" type="file" accept=".txt,text/plain" class="hidden" />
@@ -366,6 +375,25 @@
           <button id="btn-reset" type="button" class="w-full py-3 rounded-xl border border-red-500/30 text-sm text-red-400 flex items-center justify-center gap-2">
             <i data-lucide="trash-2" class="w-4 h-4"></i> Borrar todos los datos
           </button>
+        </div>
+        <div class="glass rounded-2xl p-4 space-y-3">
+          <h2 class="text-sm font-medium text-white/80">Respaldo automático</h2>
+          <p class="text-xs text-white/55 leading-relaxed">
+            Cada 15 días, al abrir la app, se guarda una copia de tus gastos y de Fichas en el Drive del trabajo. Pegá acá la dirección que te pasaron.
+          </p>
+          <div class="flex gap-2">
+            <input id="cfg-respaldo-url" type="url" placeholder="Pegá la dirección del respaldo"
+              class="select-text flex-1 min-w-0 bg-void/60 border border-violet/30 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:border-violet-light" />
+            <button id="btn-respaldo-guardar" type="button"
+              class="shrink-0 px-4 py-2.5 rounded-xl bg-gradient-to-r from-violet to-violet-soft font-semibold text-xs">
+              Guardar
+            </button>
+          </div>
+          <button id="btn-respaldo-probar" type="button"
+            class="w-full py-3 rounded-xl border border-violet/30 text-sm text-violet-light flex items-center justify-center gap-2 disabled:opacity-50">
+            <i data-lucide="upload" class="w-4 h-4"></i> Respaldar ahora
+          </button>
+          <p id="respaldo-estado" class="text-xs text-white/50 break-words">Todavía no se hizo ningún respaldo</p>
         </div>
         <p class="text-center text-[11px] text-white/30 pb-4">Finanzas Laburo · PWA offline · v3.2 · puerto 8789</p>
       </section>

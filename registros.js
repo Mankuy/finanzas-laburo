@@ -9,10 +9,15 @@ window.FLRegistros = (function () {
   'use strict';
 
   const REG_KEY = 'etaf_registros_v1';
+  const FINANZAS_KEY = 'finanzas_laburo_v1';
+  const RESPALDO_KEY = 'etaf_respaldo_v1';
   const REG_VERSION = 1;
   const APP_TAG = 'finanzas-laburo v3.2';
   const DELIM = '=====ETAF-JSON-v1=====';
   const DIAS_AVISO = 7;
+  const DIAS_RESPALDO = 15;
+  const DIAS_AVISO_RESPALDO = 20;
+  const HORAS_REINTENTO = 6;
 
   // Orden = filas 1 a 7 de la tabla «Líneas de Abordaje» de la ficha. No reordenar.
   const LINEAS = [
@@ -48,10 +53,21 @@ window.FLRegistros = (function () {
   let activeFilter = 'all';
   let initialized = false;
   let plantillaCache = null;
+  let respaldoState = defaultRespaldoState();
+  let respaldoEnCurso = false;
 
   let draftTimer = null;
   let lastDraftSaveMs = 0;
   let pendingDraft = null;
+
+  function defaultRespaldoState() {
+    return {
+      url: '',
+      ultimoOk: null,
+      ultimoIntento: null,
+      ultimoError: ''
+    };
+  }
 
   function defaultRegState() {
     return {
@@ -131,6 +147,13 @@ window.FLRegistros = (function () {
     return (
       pad2(d.getDate()) + '/' + pad2(d.getMonth() + 1) + '/' + d.getFullYear() +
       ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes())
+    );
+  }
+
+  function formatStampLocal(d) {
+    return (
+      d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) +
+      '_' + pad2(d.getHours()) + pad2(d.getMinutes())
     );
   }
 
@@ -966,6 +989,499 @@ window.FLRegistros = (function () {
     loadReg();
     render();
     api.toast('Registros borrados');
+  }
+
+  // ─── Respaldo automático, manual y recuperación ────────────
+  function loadRespaldo() {
+    try {
+      const raw = localStorage.getItem(RESPALDO_KEY);
+      if (!raw) {
+        respaldoState = defaultRespaldoState();
+        return;
+      }
+      const p = JSON.parse(raw);
+      if (!p || typeof p !== 'object' || Array.isArray(p)) {
+        respaldoState = defaultRespaldoState();
+        return;
+      }
+      respaldoState = {
+        url: typeof p.url === 'string' ? p.url.trim() : '',
+        ultimoOk: typeof p.ultimoOk === 'string' && p.ultimoOk ? p.ultimoOk : null,
+        ultimoIntento: typeof p.ultimoIntento === 'string' && p.ultimoIntento ? p.ultimoIntento : null,
+        ultimoError: typeof p.ultimoError === 'string' ? p.ultimoError : ''
+      };
+    } catch {
+      respaldoState = defaultRespaldoState();
+    }
+  }
+
+  function saveRespaldo() {
+    try {
+      localStorage.setItem(RESPALDO_KEY, JSON.stringify(respaldoState));
+      return true;
+    } catch {
+      if (api) api.toast('No se pudo guardar: el celular está sin espacio');
+      return false;
+    }
+  }
+
+  function validarUrlRespaldo(raw) {
+    const u = String(raw || '').trim();
+    if (!u) return false;
+    if (/^https:\/\/script\.google\.com\/macros\/s\/[^/?#\s]+\/exec$/.test(u)) return true;
+    const m = /^http:\/\/(127\.0\.0\.1|localhost):(\d{1,5})\/$/.exec(u);
+    if (m) {
+      const port = Number(m[2]);
+      return port >= 1 && port <= 65535;
+    }
+    return false;
+  }
+
+  function guardarUrlRespaldo() {
+    if (!api) return;
+    const input = document.getElementById('cfg-respaldo-url');
+    const val = String(input ? input.value : '').trim();
+    if (!val) {
+      respaldoState.url = '';
+      if (!saveRespaldo()) return;
+      renderRespaldo();
+      api.toast('Respaldo automático desactivado');
+      return;
+    }
+    if (!validarUrlRespaldo(val)) {
+      api.toast('Esa dirección no parece la del respaldo');
+      return;
+    }
+    respaldoState.url = val;
+    if (!saveRespaldo()) return;
+    if (input) input.value = val;
+    renderRespaldo();
+    api.toast('Dirección de respaldo guardada');
+  }
+
+  function armarPaqueteRespaldo() {
+    if (!api || regCorrupt) return null;
+    const tecnico = String(api.autor() || '').trim();
+    if (!tecnico) return null;
+
+    let rawFinanzas = null;
+    try {
+      rawFinanzas = localStorage.getItem(FINANZAS_KEY);
+    } catch {
+      rawFinanzas = null;
+    }
+    if (!rawFinanzas) return null;
+
+    const ahora = new Date();
+    const generado = ahora.toISOString();
+    const stamp = formatStampLocal(ahora);
+    const tecSlug = slug(tecnico) || 'tecnico';
+
+    const dataSinBorrador = {
+      version: regState.version,
+      registros: regState.registros,
+      exports: regState.exports,
+      pendiente: regState.pendiente,
+      recordatorios: regState.recordatorios,
+      fichaBase: regState.fichaBase,
+      cierresMes: regState.cierresMes,
+      ultimaFamiliaId: regState.ultimaFamiliaId
+    };
+
+    const fichasContenido = JSON.stringify({
+      formato: 'etaf-fichas-respaldo',
+      version: 1,
+      generado,
+      autor: tecnico,
+      app: APP_TAG,
+      data: dataSinBorrador
+    }, null, 2);
+
+    const archivos = [
+      { nombre: `finanzas_${tecSlug}_${stamp}.json`, contenido: rawFinanzas },
+      { nombre: `fichas_${tecSlug}_${stamp}.json`, contenido: fichasContenido }
+    ];
+
+    return {
+      payload: {
+        formato: 'finanzas-etaf-respaldo',
+        version: 1,
+        tecnico,
+        generado,
+        app: APP_TAG,
+        archivos
+      },
+      archivos
+    };
+  }
+
+  async function enviarRespaldo({ manual = false } = {}) {
+    if (!api) return false;
+    if (regCorrupt) {
+      if (manual) api.toast('No se pudieron leer los registros');
+      return false;
+    }
+    if (respaldoEnCurso) {
+      if (manual) api.toast('Ya hay un respaldo en curso');
+      return false;
+    }
+
+    const url = String(respaldoState.url || '').trim();
+    if (!url) {
+      if (manual) api.toast('Primero pegá y guardá la dirección del respaldo');
+      return false;
+    }
+    if (!validarUrlRespaldo(url)) {
+      if (manual) api.toast('Esa dirección no parece la del respaldo');
+      return false;
+    }
+
+    const tecnico = String(api.autor() || '').trim();
+    if (!tecnico) {
+      if (manual) api.toast('Para respaldar, completá "Nombre del técnico" arriba');
+      return false;
+    }
+
+    if (navigator.onLine === false) {
+      if (manual) api.toast('No se pudo respaldar: sin conexión');
+      return false;
+    }
+
+    const paquete = armarPaqueteRespaldo();
+    if (!paquete) {
+      if (manual) api.toast('No hay datos de gastos para respaldar');
+      return false;
+    }
+
+    respaldoEnCurso = true;
+    const btnProbar = document.getElementById('btn-respaldo-probar');
+    const avisoResp = document.getElementById('reg-aviso-respaldo');
+    if (btnProbar) btnProbar.disabled = true;
+    if (avisoResp) avisoResp.disabled = true;
+
+    respaldoState.ultimoIntento = new Date().toISOString();
+    saveRespaldo();
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        body: JSON.stringify(paquete.payload)
+      });
+      let data = null;
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error(res.ok ? 'Respuesta inválida' : `Error HTTP ${res.status}`);
+      }
+      if (!data || data.ok !== true) {
+        const errMsg = (data && typeof data.error === 'string' && data.error.trim())
+          ? data.error.trim()
+          : (res.ok ? 'Rechazado por el servidor' : `Error HTTP ${res.status}`);
+        throw new Error(errMsg);
+      }
+
+      respaldoState.ultimoOk = new Date().toISOString();
+      respaldoState.ultimoError = '';
+      saveRespaldo();
+      renderRespaldo();
+      if (manual) api.toast('Respaldo guardado en Drive');
+      return true;
+    } catch (err) {
+      const errText = (err && err.name === 'TypeError')
+        ? 'No se pudo conectar'
+        : String((err && err.message) || 'Error desconocido').trim().slice(0, 120);
+      respaldoState.ultimoError = errText || 'Error desconocido';
+      saveRespaldo();
+      renderRespaldo();
+      if (manual) api.toast('No se pudo respaldar: ' + respaldoState.ultimoError);
+      return false;
+    } finally {
+      respaldoEnCurso = false;
+      if (btnProbar) btnProbar.disabled = false;
+      if (avisoResp) avisoResp.disabled = false;
+    }
+  }
+
+  async function respaldoAutomatico() {
+    if (!api || regCorrupt || respaldoEnCurso) return;
+    const url = String(respaldoState.url || '').trim();
+    if (!url || !validarUrlRespaldo(url)) return;
+    if (!String(api.autor() || '').trim()) return;
+    if (navigator.onLine === false) return;
+
+    const ahoraMs = Date.now();
+    if (respaldoState.ultimoOk) {
+      const okMs = Date.parse(respaldoState.ultimoOk);
+      if (Number.isFinite(okMs) && (ahoraMs - okMs) < DIAS_RESPALDO * 86400000) {
+        return;
+      }
+    }
+    if (respaldoState.ultimoError && respaldoState.ultimoIntento) {
+      const intMs = Date.parse(respaldoState.ultimoIntento);
+      if (Number.isFinite(intMs) && (ahoraMs - intMs) < HORAS_REINTENTO * 3600000) {
+        return;
+      }
+    }
+
+    await enviarRespaldo({ manual: false });
+  }
+
+  async function respaldoCompletoManual() {
+    if (regCorrupt) {
+      api.toast('No se pudieron leer los registros');
+      return;
+    }
+    if (!String(api.autor() || '').trim()) {
+      api.toast('Poné tu nombre en Config');
+      return;
+    }
+    const paquete = armarPaqueteRespaldo();
+    if (!paquete) {
+      api.toast('No hay datos de gastos para respaldar');
+      return;
+    }
+    const files = paquete.archivos.map((a) =>
+      new File([a.contenido], a.nombre, { type: 'application/json' })
+    );
+    await compartirArchivos(files);
+  }
+
+  function restaurarRespaldoFichas(file) {
+    if (regCorrupt) {
+      api.toast('No se pudieron leer los registros');
+      return;
+    }
+    if (!file || file.size > 10 * 1024 * 1024) {
+      api.toast('Ese archivo no es un respaldo de Fichas');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      let parsed = null;
+      try {
+        parsed = JSON.parse(String(reader.result || ''));
+        if (
+          !parsed ||
+          typeof parsed !== 'object' ||
+          Array.isArray(parsed) ||
+          parsed.formato !== 'etaf-fichas-respaldo' ||
+          !parsed.data ||
+          typeof parsed.data !== 'object' ||
+          Array.isArray(parsed.data)
+        ) {
+          throw new Error('Formato inválido');
+        }
+      } catch {
+        api.toast('Ese archivo no es un respaldo de Fichas');
+        return;
+      }
+
+      const inc = parsed.data;
+      const incRegs = Array.isArray(inc.registros) ? inc.registros : [];
+      const incRecs = Array.isArray(inc.recordatorios) ? inc.recordatorios : [];
+      const incFichaBase = inc.fichaBase && typeof inc.fichaBase === 'object' && !Array.isArray(inc.fichaBase) ? inc.fichaBase : {};
+      const incCierresMes = inc.cierresMes && typeof inc.cierresMes === 'object' && !Array.isArray(inc.cierresMes) ? inc.cierresMes : {};
+      const incExports = inc.exports && typeof inc.exports === 'object' && !Array.isArray(inc.exports) ? inc.exports : {};
+      const incPendiente = inc.pendiente && typeof inc.pendiente === 'object' && !Array.isArray(inc.pendiente) ? inc.pendiente : {};
+
+      const famIds = new Set();
+      for (const r of incRegs) {
+        if (r && r.familyId) famIds.add(String(r.familyId));
+      }
+      for (const r of incRecs) {
+        if (r && r.familyId) famIds.add(String(r.familyId));
+      }
+      for (const fid of Object.keys(incFichaBase)) {
+        if (fid) famIds.add(String(fid));
+      }
+
+      const existingIds = new Set((api.getState().families || []).map((f) => f && f.id).filter(Boolean));
+      const faltan = [...famIds].some((fid) => !existingIds.has(fid));
+      if (faltan) {
+        api.toast('Primero recuperá los gastos: Config → Importar backup JSON con el archivo finanzas_… del mismo respaldo');
+        return;
+      }
+
+      const nRegs = incRegs.filter((r) => r && r.id).length;
+      const nRecs = incRecs.filter((r) => r && r.id).length;
+      const nFichas = Object.keys(incFichaBase).length;
+      const nCierres = Object.keys(incCierresMes).length;
+      const partes = [
+        `${nRegs} ${nRegs === 1 ? 'registro' : 'registros'}`,
+        `${nRecs} ${nRecs === 1 ? 'recordatorio' : 'recordatorios'}`,
+        `${nFichas} ${nFichas === 1 ? 'ficha' : 'fichas'}`
+      ];
+      if (nCierres > 0) partes.push(`${nCierres} ${nCierres === 1 ? 'cierre' : 'cierres'}`);
+
+      if (!confirm(`¿Recuperar respaldo de Fichas (${partes.join(', ')})? Se fusiona sin borrar lo que ya tenés.`)) {
+        return;
+      }
+
+      const snapshot = JSON.stringify(regState);
+      const nowIso = new Date().toISOString();
+
+      const regById = new Map();
+      regState.registros.forEach((r, idx) => regById.set(r.id, idx));
+      for (const r of incRegs) {
+        if (!r || !r.id) continue;
+        const tipo = validTipo(r.tipo);
+        const sinLinea = NO_LINEA_TIPOS.has(tipo);
+        const norm = {
+          id: String(r.id),
+          familyId: String(r.familyId || ''),
+          fecha: String(r.fecha || ''),
+          tipo,
+          noConcretada: (!sinLinea && (tipo === 'visita' || tipo === 'llamada')) ? Boolean(r.noConcretada) : false,
+          lineas: sinLinea ? [] : normalizeLineas(r.lineas),
+          texto: String(r.texto || '').trim().slice(0, 4000),
+          adjuntos: Array.isArray(r.adjuntos) ? r.adjuntos : [],
+          createdAt: r.createdAt || nowIso,
+          updatedAt: r.updatedAt || r.createdAt || nowIso
+        };
+        const idx = regById.get(norm.id);
+        if (idx === undefined) {
+          regById.set(norm.id, regState.registros.length);
+          regState.registros.push(norm);
+        } else if (String(norm.updatedAt) > String(regState.registros[idx].updatedAt || '')) {
+          regState.registros[idx] = norm;
+        }
+      }
+
+      const recById = new Map();
+      regState.recordatorios.forEach((r, idx) => recById.set(r.id, idx));
+      for (const r of incRecs) {
+        if (!r || !r.id) continue;
+        const norm = {
+          id: String(r.id),
+          familyId: String(r.familyId || ''),
+          fecha: String(r.fecha || ''),
+          texto: String(r.texto || '').trim().slice(0, 500),
+          hecho: Boolean(r.hecho),
+          createdAt: r.createdAt || nowIso,
+          updatedAt: r.updatedAt || r.createdAt || nowIso
+        };
+        const idx = recById.get(norm.id);
+        if (idx === undefined) {
+          recById.set(norm.id, regState.recordatorios.length);
+          regState.recordatorios.push(norm);
+        } else if (String(norm.updatedAt) > String(regState.recordatorios[idx].updatedAt || '')) {
+          regState.recordatorios[idx] = norm;
+        }
+      }
+
+      for (const [fid, fb] of Object.entries(incFichaBase)) {
+        if (!fid || !fb || typeof fb !== 'object' || Array.isArray(fb)) continue;
+        const copy = JSON.parse(JSON.stringify(fb));
+        if (copy.contexto && typeof copy.contexto === 'object' && !Array.isArray(copy.contexto)) {
+          const cx = copy.contexto;
+          if (typeof cx.af === 'string' && cx.af.trim() && !String(cx.afModalidad || '').trim()) {
+            cx.afModalidad = cx.af;
+          }
+          if ('af' in cx) delete cx.af;
+          cx.afModalidad = String(cx.afModalidad || '');
+          cx.afTitular = String(cx.afTitular || '');
+          cx.afConvenio = String(cx.afConvenio || '');
+        }
+        const cur = regState.fichaBase[fid];
+        if (!cur || String(copy.updatedAt || '') > String(cur.updatedAt || '')) {
+          regState.fichaBase[fid] = copy;
+        }
+      }
+
+      for (const [k, c] of Object.entries(incCierresMes)) {
+        if (!k || !c || typeof c !== 'object' || Array.isArray(c)) continue;
+        const cur = regState.cierresMes[k];
+        if (!cur || String(c.updatedAt || '') > String(cur.updatedAt || '')) {
+          regState.cierresMes[k] = JSON.parse(JSON.stringify(c));
+        }
+      }
+
+      for (const [k, iso] of Object.entries(incExports)) {
+        if (!k || typeof iso !== 'string' || !iso) continue;
+        if (!regState.exports[k] || iso > String(regState.exports[k])) {
+          regState.exports[k] = iso;
+        }
+      }
+
+      for (const [k, iso] of Object.entries(incPendiente)) {
+        if (!k || typeof iso !== 'string' || !iso) continue;
+        if (!regState.pendiente[k] || iso < String(regState.pendiente[k])) {
+          regState.pendiente[k] = iso;
+        }
+      }
+
+      if (!regState.ultimaFamiliaId && typeof inc.ultimaFamiliaId === 'string' && existingIds.has(inc.ultimaFamiliaId)) {
+        regState.ultimaFamiliaId = inc.ultimaFamiliaId;
+      }
+
+      if (!saveReg()) {
+        regState = JSON.parse(snapshot);
+        return;
+      }
+
+      render();
+      api.toast('Respaldo de Fichas recuperado');
+    };
+    reader.readAsText(file);
+  }
+
+  function renderRespaldo() {
+    if (!api) return;
+    const urlInput = document.getElementById('cfg-respaldo-url');
+    if (urlInput && document.activeElement !== urlInput) {
+      urlInput.value = respaldoState.url || '';
+    }
+
+    const estadoEl = document.getElementById('respaldo-estado');
+    if (estadoEl) {
+      const autor = String(api.autor() || '').trim();
+      estadoEl.classList.remove('text-amber-200', 'text-white/50');
+      if (!autor) {
+        estadoEl.textContent = 'Para respaldar, completá "Nombre del técnico" arriba';
+        estadoEl.classList.add('text-amber-200');
+      } else if (respaldoState.ultimoError) {
+        const ddmm = respaldoState.ultimoIntento ? formatDDMM(respaldoState.ultimoIntento) : '';
+        const fechaTxt = ddmm ? ` (${ddmm})` : '';
+        estadoEl.textContent = `El último intento falló${fechaTxt}: ${respaldoState.ultimoError}`;
+        estadoEl.classList.add('text-amber-200');
+      } else if (respaldoState.ultimoOk) {
+        const d = new Date(respaldoState.ultimoOk);
+        const txt = Number.isNaN(d.getTime()) ? respaldoState.ultimoOk : formatFechaHoraLocal(d);
+        estadoEl.textContent = `Último respaldo: ${txt}`;
+        estadoEl.classList.add('text-white/50');
+      } else {
+        estadoEl.textContent = 'Todavía no se hizo ningún respaldo';
+        estadoEl.classList.add('text-white/50');
+      }
+    }
+
+    const avisoRespEl = document.getElementById('reg-aviso-respaldo');
+    if (avisoRespEl) {
+      const url = String(respaldoState.url || '').trim();
+      let mostrar = false;
+      let fechaRef = '';
+      if (!regCorrupt && url) {
+        if (respaldoState.ultimoOk) {
+          const okMs = Date.parse(respaldoState.ultimoOk);
+          if (Number.isFinite(okMs) && (Date.now() - okMs) > DIAS_AVISO_RESPALDO * 86400000) {
+            mostrar = true;
+            fechaRef = formatDDMM(respaldoState.ultimoOk);
+          }
+        } else if (respaldoState.ultimoError) {
+          mostrar = true;
+          fechaRef = respaldoState.ultimoIntento ? formatDDMM(respaldoState.ultimoIntento) : '';
+        }
+      }
+      if (mostrar) {
+        const desdeTxt = fechaRef ? ` desde el ${fechaRef}` : '';
+        avisoRespEl.textContent = `El respaldo automático no anda${desdeTxt}. Tocá para respaldar ahora`;
+        avisoRespEl.classList.remove('hidden');
+      } else {
+        avisoRespEl.classList.add('hidden');
+        avisoRespEl.textContent = '';
+      }
+    }
   }
 
   // ─── Modal formulario ──────────────────────────────────────
@@ -1926,6 +2442,7 @@ window.FLRegistros = (function () {
   // ─── Render de la pestaña ──────────────────────────────────
   function render() {
     if (!api) return;
+    renderRespaldo();
     const { year, month } = api.getView();
     const mes = api.monthKey(year, month);
 
@@ -2160,12 +2677,16 @@ window.FLRegistros = (function () {
   function init(appApi) {
     api = appApi;
     loadReg();
+    loadRespaldo();
 
     try {
       navigator.storage?.persist?.();
     } catch (_) {}
 
-    if (initialized) return;
+    if (initialized) {
+      setTimeout(() => { respaldoAutomatico(); }, 0);
+      return;
+    }
     initialized = true;
 
     document.getElementById('btn-add-reg-home')?.addEventListener('click', () => openRegistroModal());
@@ -2188,6 +2709,21 @@ window.FLRegistros = (function () {
       activeFilter = fid;
       api.setView(y, m - 1);
     });
+    document.getElementById('reg-aviso-respaldo')?.addEventListener('click', () => {
+      enviarRespaldo({ manual: true });
+    });
+
+    document.getElementById('btn-respaldo-guardar')?.addEventListener('click', guardarUrlRespaldo);
+    document.getElementById('btn-respaldo-probar')?.addEventListener('click', () => {
+      enviarRespaldo({ manual: true });
+    });
+
+    document.getElementById('btn-reg-respaldo')?.addEventListener('click', respaldoCompletoManual);
+    document.getElementById('input-reg-respaldo')?.addEventListener('change', (e) => {
+      const f = e.target.files?.[0];
+      if (f) restaurarRespaldoFichas(f);
+      e.target.value = '';
+    });
 
     document.getElementById('btn-reg-borrar-viejos')?.addEventListener('click', borrarMesesExportados);
     document.getElementById('btn-reg-borrar-todo')?.addEventListener('click', borrarTodoRegistros);
@@ -2197,6 +2733,14 @@ window.FLRegistros = (function () {
       if (f) restaurarCierre(f);
       e.target.value = '';
     });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        respaldoAutomatico();
+      }
+    });
+
+    setTimeout(() => { respaldoAutomatico(); }, 0);
 
     document.getElementById('tab-reg')?.addEventListener('click', (e) => {
       const famBtn = e.target.closest('[data-reg-family]');
