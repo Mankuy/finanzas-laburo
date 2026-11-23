@@ -135,8 +135,34 @@ window.FLRegistros = (function () {
     return regState.ocultas.includes(familyId);
   }
 
+  // Texto entre corchetes = dato pendiente: «[fecha de nacimiento]». Es la misma
+  // convención que la Ficha Word, que lo pinta de amarillo.
+  const RE_PENDIENTE = /\[[^\]\n]+\]/;
+
+  /** Cantidad de campos de la ficha guardada que todavía tienen un pendiente. */
+  function pendientesFicha(familyId) {
+    const fb = regState.fichaBase[familyId];
+    if (!fb) return 0;
+    let n = 0;
+    const contar = (obj) => {
+      for (const v of Object.values(obj || {})) if (typeof v === 'string' && RE_PENDIENTE.test(v)) n++;
+    };
+    for (const p of (Array.isArray(fb.nucleo) ? fb.nucleo : [])) contar(p);
+    for (const p of (Array.isArray(fb.ingreso) ? fb.ingreso : [])) contar(p);
+    contar(fb.contacto);
+    contar(fb.contexto);
+    return n;
+  }
+
+  /** Sin datos guardados, o con algún campo todavía entre corchetes. */
   function faltanDatosFicha(familyId) {
-    return !regState.fichaBase[familyId];
+    return !regState.fichaBase[familyId] || pendientesFicha(familyId) > 0;
+  }
+
+  function avisoDatosFicha(familyId) {
+    if (!regState.fichaBase[familyId]) return 'Faltan los datos de la ficha · cargar';
+    const n = pendientesFicha(familyId);
+    return `Faltan ${n} ${n === 1 ? 'dato' : 'datos'} en la ficha · completar`;
   }
 
   function activeFamilies() {
@@ -2101,6 +2127,15 @@ window.FLRegistros = (function () {
     const ingresoList = document.getElementById('ficha-ingreso-list');
     if (!form || !nucleoList || !ingresoList) return;
 
+    // Borde ámbar en los campos que todavía tienen un pendiente entre corchetes.
+    const marcarPendientes = () => {
+      form.querySelectorAll('input[type="text"], textarea').forEach((el) => {
+        el.classList.toggle('!border-amber-400', RE_PENDIENTE.test(el.value));
+      });
+    };
+    marcarPendientes();
+    form.addEventListener('input', marcarPendientes);
+
     document.getElementById('btn-ficha-add-nucleo')?.addEventListener('click', () => {
       nucleoList.insertAdjacentHTML('beforeend', nucleoRowHtml({}));
     });
@@ -2145,6 +2180,7 @@ window.FLRegistros = (function () {
         form.querySelector('[name="x_tenencia"]').value = pcx.tenencia || '';
         form.querySelector('[name="x_instituciones"]').value = pcx.instituciones || '';
         form.querySelector('[name="x_salientesDerivacion"]').value = pcx.salientesDerivacion || '';
+        marcarPendientes();
         api.toast('Datos cargados. Revisá y tocá Guardar');
       } catch {
         api.toast('Ese archivo no parece una ficha ETAF');
@@ -2559,7 +2595,7 @@ window.FLRegistros = (function () {
           return `<button type="button" data-reg-family="all" class="chip shrink-0 px-3 py-1.5 rounded-full text-xs${isAct ? ' active' : ''}">${api.escapeHtml(c.name)}</button>`;
         }
         const punto = faltanDatosFicha(c.id)
-          ? '<span class="text-amber-300 ml-1" title="Faltan los datos de la ficha">●</span>' : '';
+          ? '<span class="text-amber-300 ml-1" title="Faltan datos de la ficha">●</span>' : '';
         return `<span class="chip shrink-0 rounded-full text-xs inline-flex items-center${isAct ? ' active' : ''}">`
           + `<button type="button" data-reg-family="${api.escapeAttr(c.id)}" class="pl-3 pr-1 py-1.5">${api.escapeHtml(c.name)}${punto}</button>`
           + `<button type="button" data-reg-ocultar="${api.escapeAttr(c.id)}" class="pl-1.5 pr-2.5 py-1.5 text-white/45" aria-label="Ocultar de Fichas">×</button>`
@@ -2570,7 +2606,7 @@ window.FLRegistros = (function () {
     if (chipsInfoEl) {
       const partes = [];
       if (fams.some((f) => faltanDatosFicha(f.id))) {
-        partes.push('<span><span class="text-amber-300">●</span> faltan los datos de la ficha</span>');
+        partes.push('<span><span class="text-amber-300">●</span> faltan datos de la ficha</span>');
       }
       const ocultas = regState.ocultas.filter((id) => api.familyById(id));
       if (ocultas.length) {
@@ -2710,7 +2746,7 @@ window.FLRegistros = (function () {
                 <p class="text-xs font-medium text-white/90 truncate">${api.escapeHtml(item.nombre)} · ${regTxt}${gastoTxt}</p>
                 <p class="text-[11px] ${statusClass} mt-0.5">${api.escapeHtml(item.estado)}</p>
                 ${api.familyById(item.familyId) && faltanDatosFicha(item.familyId) ? `
-                <button type="button" data-reg-datos-fam="${api.escapeAttr(item.familyId)}" class="text-[11px] text-amber-300 underline mt-0.5">Faltan los datos de la ficha · cargar</button>` : ''}
+                <button type="button" data-reg-datos-fam="${api.escapeAttr(item.familyId)}" class="text-[11px] text-amber-300 underline mt-0.5">${avisoDatosFicha(item.familyId)}</button>` : ''}
               </div>
               <div class="flex items-center gap-1.5 shrink-0">
                 <button type="button" data-reg-word="${api.escapeAttr(item.familyId)}"
