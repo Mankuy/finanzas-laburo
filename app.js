@@ -743,12 +743,17 @@
         return `<option value="${escapeAttr(v)}" ${v === selected ? 'selected' : ''}>${escapeHtml(c.label)}</option>`;
       })
       .join('');
-    return `<optgroup label="Familias">${fams}</optgroup><optgroup label="Equipo (sin SIPI)">${teams}</optgroup>`;
+    const vacia = selected ? '' : '<option value="" selected disabled>Elegí la Familia o el rubro…</option>';
+    return `${vacia}<optgroup label="Familias">${fams}</optgroup><optgroup label="Equipo (sin SIPI)">${teams}</optgroup>`;
   }
 
-  /** Valor del <select> para un gasto ya guardado. */
+  /**
+   * Valor del <select> para un gasto. El nuevo arranca vacío a propósito: antes
+   * arrancaba en la familia de fábrica ('fam-misc'), que en algunos celulares es
+   * una familia real renombrada, y un gasto se le imputaba sin darse cuenta.
+   */
   function moveGroupValue(m) {
-    if (!m) return 'fam-misc';
+    if (!m) return '';
     if (m.teamCategoryId) return 'team:' + m.teamCategoryId;
     return m.familyId || 'fam-misc';
   }
@@ -964,6 +969,10 @@
       const fd = new FormData(form);
       const moveType = form.dataset.type;
       const groupVal = fd.get('familyId');
+      if (moveType === 'expense' && !groupVal) {
+        toast('Elegí la Familia o el rubro de Equipo');
+        return;
+      }
       const isTeam = moveType === 'expense' && String(groupVal || '').startsWith('team:');
 
       let sipis = [];
