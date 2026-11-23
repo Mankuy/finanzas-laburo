@@ -23,7 +23,7 @@
             card: '#1E1835',
             violet: { DEFAULT: '#8B5CF6', soft: '#A855F7', light: '#C084FC' },
             neon: '#34D399',
-            rose: '#FB7185'
+            rose: { DEFAULT: '#FB7185', 500: '#F43F5E', 700: '#BE123C' }
           },
           boxShadow: {
             glow: '0 0 40px rgba(139, 92, 246, 0.35)',
@@ -346,7 +346,7 @@
         <div class="glass rounded-2xl p-5 space-y-4">
           <div>
             <label class="block text-xs text-white/50 mb-1.5" for="cfg-name">Tu nombre (opcional)</label>
-            <input id="cfg-name" type="text" maxlength="40" placeholder="Facundo"
+            <input id="cfg-name" type="text" maxlength="40" placeholder="Ej. Juana"
               class="w-full bg-void/60 border border-violet/30 rounded-xl px-4 py-3 focus:outline-none focus:border-violet-light" />
           </div>
           <div>
@@ -396,7 +396,7 @@
           </button>
           <p id="respaldo-estado" class="text-xs text-white/50 break-words">Todavía no se hizo ningún respaldo</p>
         </div>
-        <p class="text-center text-[11px] text-white/30 pb-4">Finanzas Laburo · PWA offline · v3.9 · puerto 8789</p>
+        <p class="text-center text-[11px] text-white/30 pb-4">Finanzas Laburo · v3.10</p>
       </section>
     </main>
 

@@ -850,7 +850,7 @@
             <label class="block text-xs text-white/50 mb-1">¿Quién te dio la plata?</label>
             <input name="from" type="text" required maxlength="80" value="${escapeAttr(m?.from || '')}"
               class="w-full bg-void/60 border border-violet/30 rounded-xl px-3 py-3 text-sm focus:outline-none focus:border-violet-light"
-              placeholder="Ej. Caro" />
+              placeholder="Ej. Coordinación" />
             <p class="text-[10px] text-white/35 mt-1">Es para vos: en la planilla va como «${escapeHtml(incomeConcept(viewYear, viewMonth))}», sin importar quién.</p>
           </div>
           <div>
@@ -1867,7 +1867,7 @@
     bar.className =
       'mx-4 mt-2 mb-1 rounded-2xl px-3 py-2.5 text-xs leading-snug border border-violet/40 bg-violet/15 text-violet-light flex gap-2 items-start';
     bar.innerHTML = `
-      <span class="flex-1"><strong class="text-white">Instalá la app</strong> en pantalla de inicio (HTTPS). Después funciona offline en el laburo.</span>
+      <span class="flex-1"><strong class="text-white">Instalá la app</strong> en la pantalla de inicio. Después funciona sin señal.</span>
       <button type="button" id="fl-install-close" class="shrink-0 text-white/50 text-lg leading-none px-1">×</button>
     `;
     document.querySelector('header')?.insertAdjacentElement('afterend', bar);
