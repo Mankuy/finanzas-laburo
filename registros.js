@@ -974,7 +974,12 @@ window.FLRegistros = (function () {
     api.toast('Dirección de respaldo guardada');
   }
 
-  function armarPaqueteRespaldo() {
+  /**
+   * `claves`: lo que este respaldo deja guardado. El archivo de Fichas ya sale
+   * con esas claves marcadas como respaldadas: si no, al recuperarlo en otro
+   * celular volvían como «cambios sin respaldar».
+   */
+  function armarPaqueteRespaldo(claves = new Set()) {
     if (!api || regCorrupt) return null;
     const tecnico = String(api.autor() || '').trim();
     if (!tecnico) return null;
@@ -995,8 +1000,8 @@ window.FLRegistros = (function () {
     const dataSinBorrador = {
       version: regState.version,
       registros: regState.registros,
-      exports: regState.exports,
-      pendiente: regState.pendiente,
+      exports: Object.assign({}, regState.exports, Object.fromEntries([...claves].map((k) => [k, generado]))),
+      pendiente: Object.fromEntries(Object.entries(regState.pendiente).filter(([k]) => !claves.has(k))),
       recordatorios: regState.recordatorios,
       fichaBase: regState.fichaBase,
       cierresMes: regState.cierresMes,
@@ -1064,7 +1069,7 @@ window.FLRegistros = (function () {
     }
 
     const claves = clavesARespaldar();
-    const paquete = armarPaqueteRespaldo();
+    const paquete = armarPaqueteRespaldo(claves);
     if (!paquete) {
       if (manual) api.toast('No hay datos de gastos para respaldar');
       return false;
@@ -1183,7 +1188,7 @@ window.FLRegistros = (function () {
       return;
     }
     const claves = clavesARespaldar();
-    const paquete = armarPaqueteRespaldo();
+    const paquete = armarPaqueteRespaldo(claves);
     if (!paquete) {
       api.toast('No hay datos de gastos para respaldar');
       return;
