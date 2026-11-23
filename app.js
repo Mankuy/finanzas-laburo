@@ -1698,7 +1698,11 @@
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `finanzas-laburo-${todayISO()}.json`;
+    // Con el nombre del técnico, para saber de quién es cada backup.
+    const tec = String(state.config.technician || state.config.name || '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    a.download = `finanzas-laburo-${tec ? tec + '-' : ''}${todayISO()}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
     audit('export', 'Exportó backup');
