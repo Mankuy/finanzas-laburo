@@ -128,7 +128,8 @@ window.FLRegistros = (function () {
 
   /**
    * Familias con algún gasto del técnico pero cuya ficha la hace su referente:
-   * se ocultan solo de Fichas. Siguen en Finanzas y en las planillas.
+   * no aparecen en ningún lado de Fichas (ni en el cierre). Siguen en Finanzas
+   * y en las planillas. Sus registros, si los hubiera, quedan guardados.
    */
   function estaOculta(familyId) {
     return regState.ocultas.includes(familyId);
@@ -297,6 +298,7 @@ window.FLRegistros = (function () {
       const mes = k.slice(0, sep);
       const familyId = k.slice(sep + 1);
       if (!/^\d{4}-\d{2}$/.test(mes) || !familyId) continue;
+      if (estaOculta(familyId)) continue;
       if (!oldest || ts < oldest.ts) {
         oldest = {
           key: k,
@@ -658,7 +660,7 @@ window.FLRegistros = (function () {
     const ids = new Set();
     for (const f of (api.getState().families || [])) {
       if (!f || esBolsaVarios(f)) continue;
-      if (estaOculta(f.id) && !regCounts.get(f.id)) continue;
+      if (estaOculta(f.id)) continue;
       if ((regCounts.get(f.id) || 0) > 0 || (gastoCounts.get(f.id) || 0) > 0) {
         ids.add(f.id);
       }
@@ -2591,11 +2593,11 @@ window.FLRegistros = (function () {
 
     // Caja «Para hacer» (recordatorios pendientes) y punto en barra inferior
     const hoy = api.todayISO();
-    const hayVencidos = regState.recordatorios.some((r) => r && !r.hecho && r.fecha && r.fecha <= hoy);
+    const hayVencidos = regState.recordatorios.some((r) => r && !r.hecho && r.fecha && r.fecha <= hoy && !estaOculta(r.familyId));
     updateNavDot(hayVencidos);
 
     const recsPendientes = regState.recordatorios
-      .filter((r) => r && !r.hecho && (activeFilter === 'all' || r.familyId === activeFilter))
+      .filter((r) => r && !r.hecho && !estaOculta(r.familyId) && (activeFilter === 'all' || r.familyId === activeFilter))
       .slice()
       .sort((a, b) => ((a.fecha || '') + (a.createdAt || '')).localeCompare((b.fecha || '') + (b.createdAt || '')));
 
@@ -2640,7 +2642,7 @@ window.FLRegistros = (function () {
     }
 
     // Lista de registros agrupada por día (más reciente primero)
-    const regs = registrosDelMes(mes, activeFilter === 'all' ? null : activeFilter);
+    const regs = registrosDelMes(mes, activeFilter === 'all' ? null : activeFilter).filter((r) => !estaOculta(r.familyId));
     if (listEl && emptyEl) {
       if (!regs.length) {
         listEl.innerHTML = '';
@@ -2812,7 +2814,7 @@ window.FLRegistros = (function () {
       if (ocultarBtn) {
         const id = ocultarBtn.dataset.regOcultar;
         const nombre = familyDisplayName(id);
-        if (!confirm(`¿Ocultar "${nombre}" de Fichas? Sus gastos siguen en Finanzas y en las planillas. La podés volver a mostrar desde "ocultas", abajo de las familias.`)) return;
+        if (!confirm(`¿Ocultar "${nombre}" de Fichas? Sus gastos siguen en Finanzas y en las planillas (caja y SIRC). En Fichas no aparece más, tampoco en el cierre. Si tenía registros, quedan guardados. La podés volver a mostrar desde "ocultas", abajo de las familias.`)) return;
         if (!estaOculta(id)) regState.ocultas.push(id);
         if (!saveReg()) { regState.ocultas = regState.ocultas.filter((x) => x !== id); return; }
         if (activeFilter === id) activeFilter = 'all';
