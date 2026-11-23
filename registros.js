@@ -110,9 +110,23 @@ window.FLRegistros = (function () {
     return LINEA_IDS.filter((id) => set.has(id));
   }
 
+  /**
+   * 'fam-misc' es la bolsa "Varios / sin Familia" que trae la app de fábrica y no
+   * va a Fichas. Pero en algunos celulares esa misma familia se renombró y se usa
+   * como una familia real, con chiquilines y SIPI: esa sí va. Se decide por los
+   * datos, sin tocar lo guardado. Acepta la familia o su id.
+   */
+  function esBolsaVarios(famOrId) {
+    const f = typeof famOrId === 'string' ? (api ? api.familyById(famOrId) : null) : famOrId;
+    if (!f) return famOrId === 'fam-misc';
+    if (f.id !== 'fam-misc') return false;
+    const ch = Array.isArray(f.children) ? f.children : [];
+    return !ch.some((c) => c && String(c.sipi || '').trim());
+  }
+
   function activeFamilies() {
     const list = api ? (api.getState().families || []) : [];
-    return list.filter((f) => f && f.id !== 'fam-misc' && f.active !== false);
+    return list.filter((f) => f && !esBolsaVarios(f) && f.active !== false);
   }
 
   function familyDisplayName(familyId) {
@@ -324,7 +338,7 @@ window.FLRegistros = (function () {
     }
 
     const fam = data && data.familyId ? api.familyById(data.familyId) : null;
-    if (!fam || fam.id === 'fam-misc') {
+    if (!fam || esBolsaVarios(fam)) {
       api.toast('Elegí una familia');
       return false;
     }
@@ -437,7 +451,7 @@ window.FLRegistros = (function () {
       return false;
     }
     const fam = data && data.familyId ? api.familyById(data.familyId) : null;
-    if (!fam || fam.id === 'fam-misc') {
+    if (!fam || esBolsaVarios(fam)) {
       api.toast('Elegí una familia');
       return false;
     }
@@ -594,7 +608,7 @@ window.FLRegistros = (function () {
 
   function gastosDeFamiliaEnMes(mes, familyId) {
     const f = api.familyById(familyId);
-    if (!f || f.id === 'fam-misc') return [];
+    if (!f || esBolsaVarios(f)) return [];
     const moves = api.getState().movements || [];
     return moves
       .filter((m) =>
@@ -613,14 +627,14 @@ window.FLRegistros = (function () {
   function familiasExportables(mes) {
     const regCounts = new Map();
     for (const r of regState.registros) {
-      if (!String(r.fecha || '').startsWith(mes) || !r.familyId || r.familyId === 'fam-misc') continue;
+      if (!String(r.fecha || '').startsWith(mes) || !r.familyId || esBolsaVarios(r.familyId)) continue;
       regCounts.set(r.familyId, (regCounts.get(r.familyId) || 0) + 1);
     }
 
     const gastoCounts = new Map();
     for (const m of (api.getState().movements || [])) {
       if (!m || m.type !== 'expense' || m.teamCategoryId) continue;
-      if (!m.familyId || m.familyId === 'fam-misc') continue;
+      if (!m.familyId || esBolsaVarios(m.familyId)) continue;
       if (!String(m.date || '').startsWith(mes)) continue;
       if (!api.familyById(m.familyId)) continue; // no entran gastos de familias borradas
       gastoCounts.set(m.familyId, (gastoCounts.get(m.familyId) || 0) + 1);
@@ -628,7 +642,7 @@ window.FLRegistros = (function () {
 
     const ids = new Set();
     for (const f of (api.getState().families || [])) {
-      if (!f || f.id === 'fam-misc') continue;
+      if (!f || esBolsaVarios(f)) continue;
       if ((regCounts.get(f.id) || 0) > 0 || (gastoCounts.get(f.id) || 0) > 0) {
         ids.add(f.id);
       }
@@ -1578,7 +1592,7 @@ window.FLRegistros = (function () {
     let extraOption = '';
     if (isEdit && !familias.some((f) => f.id === rec.familyId)) {
       const existing = api.familyById(rec.familyId);
-      if (existing && existing.id !== 'fam-misc') {
+      if (existing && !esBolsaVarios(existing)) {
         extraOption = `<option value="${api.escapeAttr(existing.id)}" selected>${api.escapeHtml(existing.name)}</option>`;
       } else {
         extraOption = `<option value="" selected>${api.escapeHtml(familyDisplayName(rec.familyId))}</option>`;
@@ -1696,7 +1710,7 @@ window.FLRegistros = (function () {
     let extraOption = '';
     if (isEdit && !familias.some((f) => f.id === reg.familyId)) {
       const existing = api.familyById(reg.familyId);
-      if (existing && existing.id !== 'fam-misc') {
+      if (existing && !esBolsaVarios(existing)) {
         extraOption = `<option value="${api.escapeAttr(existing.id)}" selected>${api.escapeHtml(existing.name)}</option>`;
       } else {
         extraOption = `<option value="" selected>${api.escapeHtml(familyDisplayName(reg.familyId))}</option>`;
@@ -1978,7 +1992,7 @@ window.FLRegistros = (function () {
       return;
     }
     const fam = api.familyById(familyId);
-    if (!fam || fam.id === 'fam-misc') return;
+    if (!fam || esBolsaVarios(fam)) return;
 
     const base = regState.fichaBase[familyId] || defaultFichaBase(fam);
     const nucleoArr = Array.isArray(base.nucleo) && base.nucleo.length ? base.nucleo : [{}];
@@ -2299,7 +2313,7 @@ window.FLRegistros = (function () {
     );
 
     const hasBase = Boolean(regState.fichaBase[familyId]);
-    const canEditBase = Boolean(api.familyById(familyId)) && familyId !== 'fam-misc';
+    const canEditBase = Boolean(api.familyById(familyId)) && !esBolsaVarios(familyId);
     const esParcial = mes >= api.todayISO().slice(0, 7);
 
     const salientesPreview = salienteRegs.length
@@ -2522,7 +2536,7 @@ window.FLRegistros = (function () {
       }).join('');
     }
     if (btnDatosEl) {
-      const showDatos = activeFilter !== 'all' && activeFilter !== 'fam-misc' && Boolean(api.familyById(activeFilter));
+      const showDatos = activeFilter !== 'all' && !esBolsaVarios(activeFilter) && Boolean(api.familyById(activeFilter));
       btnDatosEl.classList.toggle('hidden', !showDatos);
     }
 
