@@ -51,6 +51,7 @@ window.FLRegistros = (function () {
   let regState = defaultRegState();
   let regCorrupt = false;
   let activeFilter = 'all';
+  let verOcultas = false;
   let initialized = false;
   let plantillaCache = null;
   let respaldoState = defaultRespaldoState();
@@ -79,7 +80,8 @@ window.FLRegistros = (function () {
       exports: {},
       pendiente: {},
       ultimaFamiliaId: null,
-      borrador: null
+      borrador: null,
+      ocultas: []         // familyIds que el técnico sacó de Fichas (no son suyas)
     };
   }
 
@@ -124,9 +126,21 @@ window.FLRegistros = (function () {
     return !ch.some((c) => c && String(c.sipi || '').trim());
   }
 
+  /**
+   * Familias con algún gasto del técnico pero cuya ficha la hace su referente:
+   * se ocultan solo de Fichas. Siguen en Finanzas y en las planillas.
+   */
+  function estaOculta(familyId) {
+    return regState.ocultas.includes(familyId);
+  }
+
+  function faltanDatosFicha(familyId) {
+    return !regState.fichaBase[familyId];
+  }
+
   function activeFamilies() {
     const list = api ? (api.getState().families || []) : [];
-    return list.filter((f) => f && !esBolsaVarios(f) && f.active !== false);
+    return list.filter((f) => f && !esBolsaVarios(f) && f.active !== false && !estaOculta(f.id));
   }
 
   function familyDisplayName(familyId) {
@@ -235,7 +249,8 @@ window.FLRegistros = (function () {
         exports: p.exports && typeof p.exports === 'object' && !Array.isArray(p.exports) ? p.exports : {},
         pendiente: p.pendiente && typeof p.pendiente === 'object' && !Array.isArray(p.pendiente) ? p.pendiente : {},
         ultimaFamiliaId: typeof p.ultimaFamiliaId === 'string' ? p.ultimaFamiliaId : null,
-        borrador: p.borrador && typeof p.borrador === 'object' && !Array.isArray(p.borrador) ? p.borrador : null
+        borrador: p.borrador && typeof p.borrador === 'object' && !Array.isArray(p.borrador) ? p.borrador : null,
+        ocultas: Array.isArray(p.ocultas) ? p.ocultas.filter((x) => typeof x === 'string' && x) : []
       };
       if (cleanRecs.length !== rawRecs.length || migratedAf) saveReg();
       return true;
@@ -643,6 +658,7 @@ window.FLRegistros = (function () {
     const ids = new Set();
     for (const f of (api.getState().families || [])) {
       if (!f || esBolsaVarios(f)) continue;
+      if (estaOculta(f.id) && !regCounts.get(f.id)) continue;
       if ((regCounts.get(f.id) || 0) > 0 || (gastoCounts.get(f.id) || 0) > 0) {
         ids.add(f.id);
       }
@@ -1099,7 +1115,8 @@ window.FLRegistros = (function () {
       recordatorios: regState.recordatorios,
       fichaBase: regState.fichaBase,
       cierresMes: regState.cierresMes,
-      ultimaFamiliaId: regState.ultimaFamiliaId
+      ultimaFamiliaId: regState.ultimaFamiliaId,
+      ocultas: regState.ocultas
     };
 
     const fichasContenido = JSON.stringify({
@@ -1423,6 +1440,10 @@ window.FLRegistros = (function () {
         if (!regState.pendiente[k] || iso < String(regState.pendiente[k])) {
           regState.pendiente[k] = iso;
         }
+      }
+
+      for (const fid of (Array.isArray(inc.ocultas) ? inc.ocultas : [])) {
+        if (typeof fid === 'string' && fid && !regState.ocultas.includes(fid)) regState.ocultas.push(fid);
       }
 
       if (!regState.ultimaFamiliaId && typeof inc.ultimaFamiliaId === 'string' && existingIds.has(inc.ultimaFamiliaId)) {
@@ -2532,8 +2553,36 @@ window.FLRegistros = (function () {
     if (chipsEl) {
       chipsEl.innerHTML = chipList.map((c) => {
         const isAct = c.id === activeFilter;
-        return `<button type="button" data-reg-family="${api.escapeAttr(c.id)}" class="chip shrink-0 px-3 py-1.5 rounded-full text-xs${isAct ? ' active' : ''}">${api.escapeHtml(c.name)}</button>`;
+        if (c.id === 'all') {
+          return `<button type="button" data-reg-family="all" class="chip shrink-0 px-3 py-1.5 rounded-full text-xs${isAct ? ' active' : ''}">${api.escapeHtml(c.name)}</button>`;
+        }
+        const punto = faltanDatosFicha(c.id)
+          ? '<span class="text-amber-300 ml-1" title="Faltan los datos de la ficha">●</span>' : '';
+        return `<span class="chip shrink-0 rounded-full text-xs inline-flex items-center${isAct ? ' active' : ''}">`
+          + `<button type="button" data-reg-family="${api.escapeAttr(c.id)}" class="pl-3 pr-1 py-1.5">${api.escapeHtml(c.name)}${punto}</button>`
+          + `<button type="button" data-reg-ocultar="${api.escapeAttr(c.id)}" class="pl-1.5 pr-2.5 py-1.5 text-white/45" aria-label="Ocultar de Fichas">×</button>`
+          + '</span>';
       }).join('');
+    }
+    const chipsInfoEl = document.getElementById('reg-chips-info');
+    if (chipsInfoEl) {
+      const partes = [];
+      if (fams.some((f) => faltanDatosFicha(f.id))) {
+        partes.push('<span><span class="text-amber-300">●</span> faltan los datos de la ficha</span>');
+      }
+      const ocultas = regState.ocultas.filter((id) => api.familyById(id));
+      if (ocultas.length) {
+        partes.push(`<button type="button" data-reg-ver-ocultas class="underline">${ocultas.length} ${ocultas.length === 1 ? 'oculta' : 'ocultas'}</button>`);
+      }
+      let html = partes.length ? `<p class="flex flex-wrap gap-x-3 gap-y-1">${partes.join('')}</p>` : '';
+      if (verOcultas && ocultas.length) {
+        html += '<ul class="mt-2 space-y-1.5">' + ocultas.map((id) => `
+          <li class="flex items-center justify-between gap-2 rounded-xl bg-void/40 px-3 py-2 border border-white/5">
+            <span class="text-xs text-white/80 truncate">${api.escapeHtml(familyDisplayName(id))}</span>
+            <button type="button" data-reg-mostrar="${api.escapeAttr(id)}" class="shrink-0 px-2.5 py-1 rounded-xl border border-violet/40 text-xs text-violet-light">Volver a mostrar</button>
+          </li>`).join('') + '</ul>';
+      }
+      chipsInfoEl.innerHTML = html;
     }
     if (btnDatosEl) {
       const showDatos = activeFilter !== 'all' && !esBolsaVarios(activeFilter) && Boolean(api.familyById(activeFilter));
@@ -2658,6 +2707,8 @@ window.FLRegistros = (function () {
               <div class="min-w-0">
                 <p class="text-xs font-medium text-white/90 truncate">${api.escapeHtml(item.nombre)} · ${regTxt}${gastoTxt}</p>
                 <p class="text-[11px] ${statusClass} mt-0.5">${api.escapeHtml(item.estado)}</p>
+                ${api.familyById(item.familyId) && faltanDatosFicha(item.familyId) ? `
+                <button type="button" data-reg-datos-fam="${api.escapeAttr(item.familyId)}" class="text-[11px] text-amber-300 underline mt-0.5">Faltan los datos de la ficha · cargar</button>` : ''}
               </div>
               <div class="flex items-center gap-1.5 shrink-0">
                 <button type="button" data-reg-word="${api.escapeAttr(item.familyId)}"
@@ -2757,6 +2808,40 @@ window.FLRegistros = (function () {
     setTimeout(() => { respaldoAutomatico(); }, 0);
 
     document.getElementById('tab-reg')?.addEventListener('click', (e) => {
+      const ocultarBtn = e.target.closest('[data-reg-ocultar]');
+      if (ocultarBtn) {
+        const id = ocultarBtn.dataset.regOcultar;
+        const nombre = familyDisplayName(id);
+        if (!confirm(`¿Ocultar "${nombre}" de Fichas? Sus gastos siguen en Finanzas y en las planillas. La podés volver a mostrar desde "ocultas", abajo de las familias.`)) return;
+        if (!estaOculta(id)) regState.ocultas.push(id);
+        if (!saveReg()) { regState.ocultas = regState.ocultas.filter((x) => x !== id); return; }
+        if (activeFilter === id) activeFilter = 'all';
+        render();
+        return;
+      }
+
+      if (e.target.closest('[data-reg-ver-ocultas]')) {
+        verOcultas = !verOcultas;
+        render();
+        return;
+      }
+
+      const mostrarBtn = e.target.closest('[data-reg-mostrar]');
+      if (mostrarBtn) {
+        const id = mostrarBtn.dataset.regMostrar;
+        const antes = regState.ocultas.slice();
+        regState.ocultas = regState.ocultas.filter((x) => x !== id);
+        if (!saveReg()) { regState.ocultas = antes; return; }
+        render();
+        return;
+      }
+
+      const datosFamBtn = e.target.closest('[data-reg-datos-fam]');
+      if (datosFamBtn) {
+        openFichaDatosModal(datosFamBtn.dataset.regDatosFam);
+        return;
+      }
+
       const famBtn = e.target.closest('[data-reg-family]');
       if (famBtn) {
         activeFilter = famBtn.dataset.regFamily || 'all';
