@@ -162,7 +162,7 @@ window.FLRegistros = (function () {
   function avisoDatosFicha(familyId) {
     if (!regState.fichaBase[familyId]) return 'Faltan los datos de la ficha · cargar';
     const n = pendientesFicha(familyId);
-    return `Faltan ${n} ${n === 1 ? 'dato' : 'datos'} en la ficha · completar`;
+    return `${n === 1 ? 'Falta 1 dato' : `Faltan ${n} datos`} en la ficha · completar`;
   }
 
   function activeFamilies() {
@@ -460,7 +460,7 @@ window.FLRegistros = (function () {
     render();
     const aviso = avisoPendienteMasViejo();
     const base = existingId ? 'Registro actualizado' : 'Guardado';
-    api.toast(aviso ? `${base} · hace ${aviso.dias} días que no exportás` : base);
+    api.toast(aviso ? `${base} · hace ${aviso.dias} días que no respaldás` : base);
     return true;
   }
 
@@ -698,11 +698,11 @@ window.FLRegistros = (function () {
     const list = [];
     for (const familyId of ids) {
       const k = mes + '|' + familyId;
-      let estado = 'sin exportar';
+      let estado = 'sin respaldar';
       if (regState.pendiente[k]) {
-        estado = 'cambios sin exportar';
+        estado = 'cambios sin respaldar';
       } else if (regState.exports[k]) {
-        estado = '✓ exportada ' + formatDDMM(regState.exports[k]);
+        estado = '✓ respaldado ' + formatDDMM(regState.exports[k]);
       }
       list.push({
         familyId,
@@ -715,125 +715,6 @@ window.FLRegistros = (function () {
 
     list.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
     return list;
-  }
-
-  function formatRegistroLineaTxt(r) {
-    const f = String(r.fecha || '');
-    const ddmm = f.length >= 10 ? f.slice(8, 10) + '/' + f.slice(5, 7) : f;
-    const tLabel = tipoLabel(r.tipo);
-    const noConc = r.noConcretada ? ' · NO SE CONCRETÓ' : '';
-    const textoSingle = String(r.texto || '').trim().replace(/\s*\n+\s*/g, ' / ') || '(sin texto)';
-    const adjLen = Array.isArray(r.adjuntos) ? r.adjuntos.length : 0;
-    const adjPart = adjLen > 0 ? `  (${adjLen} ${adjLen === 1 ? 'adjunto' : 'adjuntos'})` : '';
-    return `- ${ddmm} · ${tLabel}${noConc}: ${textoSingle}${adjPart}`;
-  }
-
-  function buildCierre(mes, familyId) {
-    const fam = api.familyById(familyId);
-    const nombre = fam ? fam.name : familyDisplayName(familyId);
-    const rotulo = fam ? (fam.sheetLabel || '') : '';
-    const ninos = fam && Array.isArray(fam.children)
-      ? fam.children.map((c) => ({ nombre: c.name || '', sipi: c.sipi || '' }))
-      : [];
-
-    const regs = registrosDelMes(mes, familyId);
-    const regsJson = regs.map((r) => ({
-      id: r.id,
-      fecha: r.fecha,
-      tipo: validTipo(r.tipo),
-      noConcretada: Boolean(r.noConcretada),
-      lineas: normalizeLineas(r.lineas),
-      texto: r.texto || '',
-      adjuntos: Array.isArray(r.adjuntos) ? r.adjuntos : [],
-      createdAt: r.createdAt,
-      updatedAt: r.updatedAt
-    }));
-
-    const gastosRaw = fam ? gastosDeFamiliaEnMes(mes, familyId) : [];
-    const gastosJson = gastosRaw.map((m) => ({
-      id: m.id,
-      fecha: m.date,
-      monto: Number(m.amount),
-      que: m.what || '',
-      sipis: api.expenseSipis(m),
-      nota: m.note || ''
-    }));
-
-    const ahora = new Date();
-    const autor = api.autor();
-    const json = {
-      formato: 'etaf-cierre',
-      version: 1,
-      mes,
-      autor,
-      generado: ahora.toISOString(),
-      app: APP_TAG,
-      familias: [
-        {
-          id: familyId,
-          nombre,
-          rotulo,
-          ninos,
-          registros: regsJson,
-          gastos: gastosJson
-        }
-      ]
-    };
-
-    const [yStr, mStr] = String(mes).split('-');
-    const year = Number(yStr);
-    const monthIdx = Number(mStr) - 1;
-
-    const lines = [
-      `REGISTRO ETAF CAFF — ${api.monthLabel(year, monthIdx)}`,
-      `Técnico/a: ${autor} · Generado: ${formatFechaHoraLocal(ahora)}`,
-      'Datos sensibles de familias: no reenviar fuera del equipo.',
-      ''
-    ];
-
-    const sipisFam = ninos.map((n) => String(n.sipi || '').trim()).filter(Boolean);
-    const sipiHead = sipisFam.length ? ` (SIPI ${sipisFam.join(', ')})` : '';
-    lines.push(`════════ ${nombre}${sipiHead} ════════`);
-    lines.push('');
-
-    for (const linea of LINEAS) {
-      const matching = regsJson.filter((r) => r.lineas.includes(linea.id));
-      if (!matching.length) continue;
-      lines.push(`[${linea.corto}]`);
-      for (const r of matching) lines.push(formatRegistroLineaTxt(r));
-      lines.push('');
-    }
-
-    const sinClasificar = regsJson.filter((r) => !r.lineas.length);
-    if (sinClasificar.length) {
-      lines.push('[Sin clasificar]');
-      for (const r of sinClasificar) lines.push(formatRegistroLineaTxt(r));
-      lines.push('');
-    }
-
-    if (gastosJson.length) {
-      lines.push('[Apoyos económicos del mes]');
-      let suma = 0;
-      for (const g of gastosJson) {
-        suma += Number(g.monto) || 0;
-        const f = String(g.fecha || '');
-        const ddmm = f.length >= 10 ? f.slice(8, 10) + '/' + f.slice(5, 7) : f;
-        lines.push(`- ${ddmm} · ${api.money(g.monto)} · ${g.que}`);
-      }
-      suma = Math.round(suma * 100) / 100;
-      lines.push(`Total: ${api.money(suma)}`);
-      lines.push('');
-    }
-
-    lines.push(DELIM);
-    lines.push(JSON.stringify(json, null, 2));
-
-    const famSlug = slug(nombre) || 'familia';
-    return {
-      filename: `etaf-cierre_${mes}_${famSlug}.txt`,
-      text: lines.join('\n'),
-      json
-    };
   }
 
   async function compartirArchivos(files) {
@@ -854,30 +735,6 @@ window.FLRegistros = (function () {
     }
     api.toast('Quedó en Descargas del celu');
     return 'descargado';
-  }
-
-  async function exportCierre(familyId) {
-    if (regCorrupt) {
-      api.toast('No se pudieron leer los registros');
-      return;
-    }
-    if (!String(api.autor() || '').trim()) {
-      api.toast('Poné tu nombre en Config');
-      return;
-    }
-    const { year, month } = api.getView();
-    const mes = api.monthKey(year, month);
-    const { filename, text } = buildCierre(mes, familyId);
-    const file = new File([text], filename, { type: 'text/plain' });
-
-    const res = await compartirArchivos([file]);
-    if (res !== 'cancelado') {
-      const k = mes + '|' + familyId;
-      regState.exports[k] = new Date().toISOString();
-      delete regState.pendiente[k];
-      saveReg();
-      render();
-    }
   }
 
   // ─── Recuperar y limpieza ──────────────────────────────────
@@ -1016,7 +873,7 @@ window.FLRegistros = (function () {
       return;
     }
 
-    if (!confirm(`¿Borrar ${totalRegistros} registro(s) de ${mesesListos.size} mes(es) ya exportado(s)?`)) {
+    if (!confirm(`¿Borrar ${totalRegistros} registro(s) de ${mesesListos.size} mes(es) ya respaldado(s)?`)) {
       return;
     }
 
@@ -1206,6 +1063,7 @@ window.FLRegistros = (function () {
       return false;
     }
 
+    const claves = clavesARespaldar();
     const paquete = armarPaqueteRespaldo();
     if (!paquete) {
       if (manual) api.toast('No hay datos de gastos para respaldar');
@@ -1242,6 +1100,7 @@ window.FLRegistros = (function () {
       respaldoState.ultimoOk = new Date().toISOString();
       respaldoState.ultimoError = '';
       saveRespaldo();
+      marcarRespaldado(claves);
       renderRespaldo();
       if (manual) api.toast('Respaldo guardado en Drive');
       return true;
@@ -1285,6 +1144,35 @@ window.FLRegistros = (function () {
     await enviarRespaldo({ manual: false });
   }
 
+  /**
+   * Todo lo que va en un respaldo completo: cada mes de cada familia con
+   * registros o gastos, más lo que estaba pendiente. Se calcula ANTES de mandar,
+   * así lo que se cargue mientras el respaldo está en camino no queda marcado.
+   */
+  function clavesARespaldar() {
+    const claves = new Set(Object.keys(regState.pendiente));
+    for (const r of regState.registros) {
+      const mes = String(r.fecha || '').slice(0, 7);
+      if (r.familyId && /^\d{4}-\d{2}$/.test(mes)) claves.add(mes + '|' + r.familyId);
+    }
+    for (const m of (api.getState().movements || [])) {
+      if (!m || m.type !== 'expense' || m.teamCategoryId || !m.familyId) continue;
+      const mes = String(m.date || '').slice(0, 7);
+      if (/^\d{4}-\d{2}$/.test(mes)) claves.add(mes + '|' + m.familyId);
+    }
+    return claves;
+  }
+
+  function marcarRespaldado(claves) {
+    const ahora = new Date().toISOString();
+    for (const k of claves) {
+      regState.exports[k] = ahora;
+      delete regState.pendiente[k];
+    }
+    saveReg();
+    render();
+  }
+
   async function respaldoCompletoManual() {
     if (regCorrupt) {
       api.toast('No se pudieron leer los registros');
@@ -1294,6 +1182,7 @@ window.FLRegistros = (function () {
       api.toast('Poné tu nombre en Config');
       return;
     }
+    const claves = clavesARespaldar();
     const paquete = armarPaqueteRespaldo();
     if (!paquete) {
       api.toast('No hay datos de gastos para respaldar');
@@ -1302,7 +1191,8 @@ window.FLRegistros = (function () {
     const files = paquete.archivos.map((a) =>
       new File([a.contenido], a.nombre, { type: 'application/json' })
     );
-    await compartirArchivos(files);
+    const res = await compartirArchivos(files);
+    if (res !== 'cancelado') marcarRespaldado(claves);
   }
 
   function restaurarRespaldoFichas(file) {
@@ -2572,7 +2462,7 @@ window.FLRegistros = (function () {
     const aviso = avisoPendienteMasViejo();
     if (avisoEl) {
       if (aviso) {
-        avisoEl.textContent = `Hace ${aviso.dias} días que no exportás ${aviso.nombre} (${aviso.mesNombre}) → ver`;
+        avisoEl.textContent = `Hace ${aviso.dias} días que no respaldás los registros de ${aviso.nombre} (${aviso.mesNombre}) → respaldar ahora`;
         avisoEl.dataset.mes = aviso.mes;
         avisoEl.dataset.familyId = aviso.familyId;
         avisoEl.classList.remove('hidden');
@@ -2738,7 +2628,7 @@ window.FLRegistros = (function () {
           const gastoTxt = item.nGastos > 0 ? ` · ${item.nGastos} ${item.nGastos === 1 ? 'gasto' : 'gastos'}` : '';
           let statusClass = 'text-white/45';
           if (item.estado.startsWith('✓')) statusClass = 'text-neon';
-          else if (item.estado === 'cambios sin exportar') statusClass = 'text-amber-300';
+          else if (item.estado === 'cambios sin respaldar') statusClass = 'text-amber-300';
 
           return `
             <li class="rounded-xl bg-void/40 px-3 py-2.5 border border-white/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
@@ -2752,10 +2642,6 @@ window.FLRegistros = (function () {
                 <button type="button" data-reg-word="${api.escapeAttr(item.familyId)}"
                   class="px-2.5 py-1.5 rounded-xl border border-violet/40 text-xs font-medium text-violet-light hover:bg-violet/15">
                   Ficha Word
-                </button>
-                <button type="button" data-reg-export="${api.escapeAttr(item.familyId)}"
-                  class="px-2.5 py-1.5 rounded-xl border border-violet/40 text-xs font-medium text-violet-light hover:bg-violet/15">
-                  Exportar
                 </button>
               </div>
             </li>
@@ -2802,16 +2688,7 @@ window.FLRegistros = (function () {
     document.getElementById('reg-prev-month')?.addEventListener('click', () => api.shiftViewMonth(-1));
     document.getElementById('reg-next-month')?.addEventListener('click', () => api.shiftViewMonth(1));
 
-    document.getElementById('reg-aviso')?.addEventListener('click', (e) => {
-      const btn = e.currentTarget;
-      const mes = btn.dataset.mes;
-      const fid = btn.dataset.familyId;
-      if (!mes || !fid) return;
-      const [y, m] = mes.split('-').map(Number);
-      if (!y || !m) return;
-      activeFilter = fid;
-      api.setView(y, m - 1);
-    });
+    document.getElementById('reg-aviso')?.addEventListener('click', respaldoCompletoManual);
     document.getElementById('reg-aviso-respaldo')?.addEventListener('click', () => {
       enviarRespaldo({ manual: true });
     });
@@ -2913,10 +2790,6 @@ window.FLRegistros = (function () {
         return;
       }
 
-      const expBtn = e.target.closest('[data-reg-export]');
-      if (expBtn) {
-        exportCierre(expBtn.dataset.regExport);
-      }
     });
 
     // Asegura guardar el borrador pendiente antes de que closeModal() limpie el DOM.
