@@ -1167,6 +1167,7 @@
     document.getElementById('month-count').textContent =
       t.count + (t.count === 1 ? ' movimiento' : ' movimientos');
     document.getElementById('sheets-month').textContent = monthLabel(viewYear, viewMonth);
+    renderRevision();
 
     const total = t.income + t.expense;
     const pi = total > 0 ? (t.income / total) * 100 : 50;
@@ -1500,6 +1501,67 @@
     window.scrollTo(0, 0);
   }
 
+  // ─── Revisión antes de rendir ──────────────────────────────
+  /**
+   * Lo que conviene mirar antes de sacar las planillas del mes en vista. No
+   * bloquea nada: solo avisa. Cada aviso de un gasto lleva su id para abrirlo.
+   */
+  function revisionMes() {
+    const avisos = [];
+    const hoy = todayISO();
+    const ddmm = (d) => String(d || '').slice(8, 10) + '/' + String(d || '').slice(5, 7);
+    const que = (m) => (m.what ? '«' + m.what + '»' : 'Gasto') + ' (' + ddmm(m.date) + ')';
+    const movs = sheetMovements();
+
+    for (const m of movs) {
+      if (m.date && m.date > hoy) {
+        avisos.push({ id: m.id, texto: que(m) + ' tiene fecha futura.' });
+      }
+      if (m.type !== 'expense' || m.teamCategoryId) continue;
+      const f = m.familyId ? familyById(m.familyId) : null;
+      if (!f) {
+        avisos.push({ id: m.id, texto: que(m) + ' no tiene Familia: en la SIRC sale como «Sin Familia».' });
+        continue;
+      }
+      const conSipi = ensureFamilyChildren(f).filter((c) => c && String(c.sipi || '').trim());
+      const propios = (Array.isArray(m.sipis) && m.sipis.length) || m.sipi;
+      if (!conSipi.length) {
+        avisos.push({ id: m.id, texto: que(m) + ' es de ' + f.name + ', que no tiene SIPI cargado: en la SIRC sale sin SIPI.' });
+      } else if (!propios && conSipi.length > 1) {
+        avisos.push({ id: m.id, texto: que(m) + ' de ' + f.name + ' no tiene chiquilín marcado: en la SIRC va con el primer SIPI de la familia.' });
+      }
+    }
+
+    let saldo = 0;
+    for (const m of movs) {
+      saldo += m.type === 'income' ? Number(m.amount) || 0 : -(Number(m.amount) || 0);
+      if (saldo < 0) {
+        avisos.push({ id: null, texto: 'El saldo queda en negativo el ' + ddmm(m.date) + ' (' + money(saldo) + '): ¿falta cargar una entrada?' });
+        break;
+      }
+    }
+    return avisos;
+  }
+
+  function renderRevision() {
+    const el = document.getElementById('sheets-check');
+    if (!el) return;
+    if (!movementsInView().length) { el.innerHTML = ''; return; }
+    const avisos = revisionMes();
+    if (!avisos.length) {
+      el.innerHTML = '<p class="text-[11px] text-neon">✓ Todo en orden para rendir.</p>';
+      return;
+    }
+    const MAX = 6;
+    el.innerHTML = '<div class="rounded-xl border border-amber-400/40 bg-amber-400/10 px-3 py-2 space-y-1.5">'
+      + '<p class="text-[11px] font-medium text-amber-300">Antes de rendir, revisá:</p>'
+      + avisos.slice(0, MAX).map((a) => a.id
+        ? '<button type="button" data-check-move="' + escapeAttr(a.id) + '" class="block w-full text-left text-[11px] text-white/80 underline decoration-amber-400/50">' + escapeHtml(a.texto) + '</button>'
+        : '<p class="text-[11px] text-white/80">' + escapeHtml(a.texto) + '</p>').join('')
+      + (avisos.length > MAX ? '<p class="text-[11px] text-white/50">y ' + (avisos.length - MAX) + ' más.</p>' : '')
+      + '</div>';
+  }
+
   // ─── Planillas del equipo ──────────────────────────────────
   /** Movimientos del mes ordenados como van en la planilla: del 1 al 31. */
   function sheetMovements() {
@@ -1819,6 +1881,11 @@
     });
 
     document.getElementById('btn-sheet-caja').addEventListener('click', exportCaja);
+    document.getElementById('sheets-check')?.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-check-move]');
+      const m = b && state.movements.find((x) => x.id === b.dataset.checkMove);
+      if (m) openMoveModal(m.type, m);
+    });
     document.getElementById('btn-sheet-sirc').addEventListener('click', exportSirc);
     document.getElementById('btn-sheet-pdf').addEventListener('click', printCaja);
     document.getElementById('btn-sirc-pdf').addEventListener('click', printSirc);
