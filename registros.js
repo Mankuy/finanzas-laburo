@@ -15,8 +15,8 @@ window.FLRegistros = (function () {
   const APP_TAG = 'finanzas-laburo v3.2';
   const DELIM = '=====ETAF-JSON-v1=====';
   const DIAS_AVISO = 7;
-  const DIAS_RESPALDO = 15;
-  const DIAS_AVISO_RESPALDO = 20;
+  const DIAS_RESPALDO = 7;
+  const DIAS_AVISO_RESPALDO = 10;
   const HORAS_REINTENTO = 6;
 
   // Orden = filas 1 a 7 de la tabla «Líneas de Abordaje» de la ficha. No reordenar.
